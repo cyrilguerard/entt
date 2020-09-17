@@ -654,45 +654,6 @@ public:
         return view_proxy{std::move(first), std::move(last), pools};
     }
 
-    /**
-     * @brief Chunked iteration for entities and components
-     *
-     * Chunked iteration tries to spot chunks in the sets of entities and
-     * components and return them one at a time along with their sizes.<br/>
-     * This type of iteration is intended where it's known a priori that the
-     * creation of entities and components takes place in chunk, which is
-     * actually quite common. In this case, various optimizations can be applied
-     * downstream to obtain even better performances from the views.
-     *
-     * The signature of the function must be equivalent to the following:
-     *
-     * @code{.cpp}
-     * void(const entity_type *, Type *..., size_type);
-     * @endcode
-     *
-     * The arguments are as follows:
-     *
-     * * A pointer to the entities belonging to the chunk.
-     * * Pointers to the components associated with the returned entities.
-     * * The length of the chunk.
-     *
-     * Note that the callback can be invoked 0 or more times and no guarantee is
-     * given on the order of the elements.
-     *
-     * @note
-     * Empty types aren't explicitly instantiated and therefore they are never
-     * returned during iterations.
-     *
-     * @tparam Func Type of the function object to invoke.
-     * @param func A valid function object.
-     */
-    template<typename Func>
-    void chunked(Func func) const {
-        using non_empty_type = type_list_cat_t<std::conditional_t<is_eto_eligible_v<Component>, type_list<>, type_list<Component>>...>;
-        view = candidate();
-        iterate(std::move(func), non_empty_type{});
-    }
-
 private:
     const std::tuple<pool_type<Component> *...> pools;
     mutable const sparse_set<entity_type>* view;

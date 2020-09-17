@@ -32,18 +32,12 @@
     * [Continuous loader](#continuous-loader)
     * [Archives](#archives)
     * [One example to rule them all](#one-example-to-rule-them-all)
-* [Views and Groups](#views-and-groups)
+* [Give me my stuff](#give-me-my-stuff)
   * [Views](#views)
   * [Runtime views](#runtime-views)
-  * [Groups](#groups)
-    * [Full-owning groups](#full-owning-groups)
-    * [Partial-owning groups](#partial-owning-groups)
-    * [Non-owning groups](#non-owning-groups)
-    * [Nested groups](#nested-groups)
   * [Types: const, non-const and all in between](#types-const-non-const-and-all-in-between)
   * [Give me everything](#give-me-everything)
   * [What is allowed and what is not](#what-is-allowed-and-what-is-not)
-    * [More performance, more constraints](#more-performance-more-constraints)
 * [Empty type optimization](#empty-type-optimization)
 * [Multithreading](#multithreading)
   * [Iterators](#iterators)
@@ -124,7 +118,7 @@ all what is needed to act as the sole _source of truth_ of an application.
 
 # Vademecum
 
-The registry to store, the views and the groups to iterate. That's all.
+The registry to store, the views to iterate. That's all.
 
 An entity (the _E_ of an _ECS_) is an opaque identifier that users should use
 as-is. Inspecting an identifier isn't recommended since its format can change in
@@ -160,8 +154,8 @@ a more flexible and user-friendly model is under development.
 
 # The Registry, the Entity and the Component
 
-A registry can store and manage entities, as well as create views and groups to
-iterate the underlying data structures.<br/>
+A registry can store and manage entities, as well as create views to iterate the
+underlying data structures.<br/>
 The class template `basic_registry` lets users decide what's the preferred type
 to represent an entity. Because `std::uint32_t` is large enough for almost all
 the cases, there exists also the enum class `entt::entity` that _wraps_ it and
@@ -436,7 +430,7 @@ from the documentation of the library that first introduced this tool,
 >only update the 10 changed units. So efficient.
 
 In `EnTT`, this means to iterating over a reduced set of entities and components
-with respect to what would otherwise be returned from a view or a group.<br/>
+with respect to what would otherwise be returned from a view.<br/>
 On these words, however, the similarities with the proposal of `Entitas` also
 end. The rules of the language and the design of the library obviously impose
 and allow different things.
@@ -574,9 +568,6 @@ needs:
 
   In this case, instances of `movement` are arranged in memory so that cache
   misses are minimized when the two components are iterated together.
-
-As a side note, the use of groups limits the possibility of sorting pools of
-components. Refer to the specific documentation for more details.
 
 ## Helpers
 
@@ -1022,10 +1013,10 @@ to use in which case mostly depends on the goal and there is not a golden rule
 for that. For obvious reasons, what is important is that the data are restored
 in exactly the same order in which they were serialized.
 
-The `entities` member function restores groups of entities and maps each entity
-to a local counterpart when required. In other terms, for each remote entity
-identifier not yet registered by the loader, it creates a local identifier so
-that it can keep the local entity in sync with the remote one.
+The `entities` member function restores entities and maps each entity to a local
+counterpart when required. In other terms, for each remote entity identifier not
+yet registered by the loader, it creates a local identifier so that it can keep
+the local entity in sync with the remote one.
 
 The `component` member function restores all and only the components specified
 and assigns them to the right entities.<br/>
@@ -1119,22 +1110,18 @@ the best way to do it. However, feel free to use it at your own risk.
 The basic idea is to store everything in a group of queues in memory, then bring
 everything back to the registry with different loaders.
 
-# Views and Groups
+# Give me my stuff
 
-First of all, it's worth answering a question: why views and groups?<br/>
+First of all, it's worth answering a question: why views?<br/>
 Briefly, they're a good tool to enforce single responsibility. A system that has
 access to a registry can create and destroy entities, as well as assign and
-remove components. On the other side, a system that has access to a view or a
-group can only iterate, read and update entities and components.<br/>
+remove components. On the other side, a system that has access to a view can
+only iterate, read and update entities and components.<br/>
 It is a subtle difference that can help designing a better software sometimes.
 
-More in details:
-
-* Views are a non-intrusive tool to access entities and components without
-  affecting other functionalities or increasing the memory consumption.
-
-* Groups are an intrusive tool that allows to reach higher performance along
-  critical paths but has also a price to pay for that.
+More in details, views are a non-intrusive tool to access entities and
+components without affecting other functionalities or increasing the memory
+consumption.
 
 There are mainly two kinds of views: _compile-time_ (also known as `view`) and
 runtime (also known as `runtime_view`).<br/>
@@ -1143,15 +1130,6 @@ optimizations because of that. The latter can be constructed at runtime instead
 using numerical type identifiers and are a bit slower to iterate.<br/>
 In both cases, creating and destroying a view isn't expensive at all since they
 don't have any type of initialization.
-
-Groups come in three different flavors: _full-owning groups_, _partial-owning
-groups_ and _non-owning groups_. The main difference between them is in terms of
-performance.<br/>
-Groups can literally _own_ one or more component types. They are allowed to
-rearrange pools so as to speed up iterations. Roughly speaking: the more
-components a group owns, the faster it is to iterate them.<br/>
-A given component can belong to multiple groups only if they are _nested_, so
-users have to define groups carefully to get the best out of them.
 
 ## Views
 
@@ -1319,259 +1297,13 @@ auto view = registry.runtime_view(std::cbegin(components), std::cend(components)
 compile-time what components to _use_ to iterate entities. If possible, don't
 use runtime views as their performance are inferior to those of the other views.
 
-## Groups
-
-Groups are meant to iterate multiple components at once and to offer a faster
-alternative to multi component views.<br/>
-Groups overcome the performance of the other tools available but require to get
-the ownership of components and this sets some constraints on pools. On the
-other side, groups aren't an automatism that increases memory consumption,
-affects functionalities and tries to optimize iterations for all the possible
-combinations of components. Users can decide when to pay for groups and to what
-extent.<br/>
-The most interesting aspect of groups is that they fit _usage patterns_. Other
-solutions around usually try to optimize everything, because it is known that
-somewhere within the _everything_ there are also our usage patterns. However
-this has a cost that isn't negligible, both in terms of performance and memory
-usage. Ironically, users pay the price also for things they don't want and this
-isn't something I like much. Even worse, one cannot easily disable such a
-behavior. Groups work differently instead and are designed to optimize only the
-real use cases when users find they need to.<br/>
-Another nice-to-have feature of groups is that they have no impact on memory
-consumption, put aside full non-owning groups that are pretty rare and should be
-avoided as long as possible.
-
-All groups affect to an extent the creation and destruction of their components.
-This is due to the fact that they must _observe_ changes in the pools of
-interest and arrange data _correctly_ when needed for the types they own.<br/>
-That being said, the way groups operate is beyond the scope of this document.
-However, it's unlikely that users will be able to appreciate the impact of
-groups on the other functionalities of a registry.
-
-Groups offer a bunch of functionalities to get the number of entities they are
-going to return and a raw access to the entity list as well as to the component
-list for owned components. It's also possible to ask a group if it contains a
-given entity.<br/>
-Refer to the inline documentation for all the details.
-
-There is no need to store groups around for they are extremely cheap to
-construct, even though they can be copied without problems and reused freely.
-A group performs an initialization step the very first time it's requested and
-this could be quite costly. To avoid it, consider creating the group when no
-components have been assigned yet. If the registry is empty, preparation is
-extremely fast. Groups also return newly created and correctly initialized
-iterators whenever `begin` or `end` are invoked.
-
-To iterate groups, either use them in a range-for loop:
-
-```cpp
-auto group = registry.group<position>(entt::get<velocity>);
-
-for(auto entity: group) {
-    // a component at a time ...
-    auto &position = group.get<position>(entity);
-    auto &velocity = group.get<velocity>(entity);
-
-    // ... or multiple components at once
-    auto [pos, vel] = group.get<position, velocity>(entity);
-
-    // ...
-}
-```
-
-Or rely on the `each` and `proxy` member functions to iterate both entities and
-components at once:
-
-```cpp
-// through a callback
-registry.group<position>(entt::get<velocity>).each([](auto entity, auto &pos, auto &vel) {
-    // ...
-});
-
-// using an input iterator
-for(auto &&[entity, pos, vel]: registry.group<position>(entt::get<velocity>).proxy()) {
-    // ...
-}
-```
-
-Note that entities can also be excluded from the parameter list when received
-through a callback and this can improve even further the performance during
-iterations.<br/>
-Since they aren't explicitly instantiated, empty components aren't returned in
-any case.
-
-**Note**: prefer the `get` member function of a group instead of that of a
-registry during iterations to get the types iterated by the group itself.
-
-### Full-owning groups
-
-A full-owning group is the fastest tool an user can expect to use to iterate
-multiple components at once. It iterates all the components directly, no
-indirection required. This type of groups performs more or less as if users are
-accessing sequentially a bunch of packed arrays of components all sorted
-identically, with no jumps nor branches.
-
-A full-owning group is created as:
-
-```cpp
-auto group = registry.group<position, velocity>();
-```
-
-Filtering entities by components is also supported:
-
-```cpp
-auto group = registry.group<position, velocity>(entt::exclude<renderable>);
-```
-
-Once created, the group gets the ownership of all the components specified in
-the template parameter list and arranges their pools as needed.
-
-Sorting owned components is no longer allowed once the group has been created.
-However, full-owning groups can be sorted by means of their `sort` member
-functions. Sorting a full-owning group affects all its instances.
-
-### Partial-owning groups
-
-A partial-owning group works similarly to a full-owning group for the components
-it owns, but relies on indirection to get components owned by other groups. This
-isn't as fast as a full-owning group, but it's already much faster than views
-when there are only one or two free components to retrieve (the most common
-cases likely). In the worst case, it's not slower than views anyway.
-
-A partial-owning group is created as:
-
-```cpp
-auto group = registry.group<position>(entt::get<velocity>);
-```
-
-Filtering entities by components is also supported:
-
-```cpp
-auto group = registry.group<position>(entt::get<velocity>, entt::exclude<renderable>);
-```
-
-Once created, the group gets the ownership of all the components specified in
-the template parameter list and arranges their pools as needed. The ownership of
-the types provided via `entt::get` doesn't pass to the group instead.
-
-Sorting owned components is no longer allowed once the group has been created.
-However, partial-owning groups can be sorted by means of their `sort` member
-functions. Sorting a partial-owning group affects all its instances.
-
-### Non-owning groups
-
-Non-owning groups are usually fast enough, for sure faster than views and well
-suited for most of the cases. However, they require custom data structures to
-work properly and they increase memory consumption. As a rule of thumb, users
-should avoid using non-owning groups, if possible.
-
-A non-owning group is created as:
-
-```cpp
-auto group = registry.group<>(entt::get<position, velocity>);
-```
-
-Filtering entities by components is also supported:
-
-```cpp
-auto group = registry.group<>(entt::get<position, velocity>, entt::exclude<renderable>);
-```
-
-The group doesn't receive the ownership of any type of component in this
-case. This type of groups is therefore the least performing in general, but also
-the only one that can be used in any situation to slightly improve performance.
-
-Non-owning groups can be sorted by means of their `sort` member functions.
-Sorting a non-owning group affects all its instances.
-
-### Nested groups
-
-A type of component cannot be owned by two or more conflicting groups such as:
-
-* `registry.group<transform, sprite>()`.
-* `registry.group<transform, rotation>()`.
-
-However, the same type can be owned by groups belonging to the same _family_,
-also called _nested groups_, such as:
-
-* `registry.group<sprite, transform>()`.
-* `registry.group<sprite, transform, rotation>()`.
-
-Fortunately, these are also very common cases if not the most common ones.<br/>
-It allows to increase performance on a greater number of component combinations.
-
-Two nested groups are such that they own at least one componet type and the list
-of component types involved by one of them is contained entirely in that of the
-other. More specifically, this applies independently to all component lists used
-to define a group.<br/>
-Therefore, the rules for defining whether two or more groups are nested can be
-summarized as:
-
-* One of the groups involves one or more additional component types with respect
-  to the other, whether they are owned, observed or excluded.
-
-* The list of component types owned by the most restrictive group is the same or
-  contains entirely that of the others. This also applies to the list of
-  observed and excluded components.
-
-It means that nested groups _extend_ their parents by adding more conditions in
-the form of new components.
-
-As mentioned, the components don't necessarily have to be all _owned_ so that
-two groups can be considered nested. The following definitions are fully valid:
-
-* `registry.group<sprite>(entt::get<renderable>)`.
-* `registry.group<sprite, transform>(entt::get<renderable>)`.
-* `registry.group<sprite, transform>(entt::get<renderable, rotation>)`.
-
-Exclusion lists also play their part in this respect. When it comes to defining
-nested groups, an excluded component type `T` is treated as being an observed
-type `not_T`. Therefore, consider these two definitions:
-
-* `registry.group<sprite, transform>()`.
-* `registry.group<sprite, transform>(entt::exclude<rotation>)`.
-
-They are treated as if users were defining the following groups:
-
-* `group<sprite, transform>()`.
-* `group<sprite, transform>(entt::get<not_rotation>)`.
-
-Where `not_rotation` is an empty tag present only when `rotation` is not.
-
-Because of this, to define a new group that is more restrictive than an existing
-one, it's enough to take the list of component types of the latter and extend it
-by adding new component types either owned, observed or excluded, without any
-precautions depending on the case.<br/>
-The opposite is also true. To define a _larger_ group, it will be enough to take
-an existing one and remove _constraints_ from it, in whatever form they are
-expressed.<br/>
-Note that the greater the number of component types involved by a group, the
-more restrictive it is.
-
-Despite the extreme flexibility of nested groups which allow to independently
-use component types either owned, observed or excluded, the real strength of
-this tool lies in the possibility of defining a greater number of groups that
-**own** the same components, thus offering the best performance in more
-cases.<br/>
-In fact, given a list of component types involved by a group, the greater the
-number of those owned, the greater the performance of the group itself.
-
-As a side note, it's no longer possible to sort all groups when defining nested
-ones. This is because the most restrictive group shares its elements with the
-less restrictive ones and ordering the latter would invalidate the former.<br/>
-However, given a family of nested groups, it's still possible to sort the most
-restrictive of them. To prevent users from having to remember which of their
-groups is the most restrictive, the registry class offers the `sortable` member
-function to know if a group can be sorted or not.
-
 ## Types: const, non-const and all in between
 
-The `registry` class offers two overloads when it comes to constructing views
-and groups: a const version and a non-const one. The former accepts both const
-and non-const types as template parameters, the latter accepts only const types
-instead.<br/>
-It means that views and groups can be constructed from a const registry and they
-propagate the constness of the registry to the types involved. As an example:
+The `registry` class offers two overloads when it comes to constructing views: a
+const version and a non-const one. The former accepts both const and non-const
+types as template parameters, the latter accepts only const types instead.<br/>
+It means that views can be constructed from a const registry and they propagate
+the constness of the registry to the types involved. As an example:
 
 ```cpp
 entt::view<const position, const velocity> view = std::as_const(registry).view<const position, const velocity>();
@@ -1616,12 +1348,10 @@ view.each([](auto entity, position &pos, const velocity &vel) {
 A caller can still refer to the `position` components through a const reference
 because of the rules of the language that fortunately already allow it.
 
-The same concepts apply to groups as well.
-
 ## Give me everything
 
-Views and groups are narrow windows on the entire list of entities. They work by
-filtering entities according to their components.<br/>
+Views are narrow windows on the entire list of entities. They work by filtering
+entities according to their components.<br/>
 In some cases there may be the need to iterate all the entities still in use
 regardless of their components. The registry offers a specific member function
 to do that:
@@ -1633,9 +1363,9 @@ registry.each([](auto entity) {
 ```
 
 It returns to the caller all the entities that are still in use.<br/>
-As a rule of thumb, consider using a view or a group if the goal is to iterate
-entities that have a determinate set of components. These tools are usually much
-faster than combining this function with a bunch of custom tests.<br/>
+As a rule of thumb, consider using a view if the goal is to iterate entities
+that have a determinate set of components. These tools are usually much faster
+than combining this function with a bunch of custom tests.<br/>
 In all the other cases, this is the way to go.
 
 There exists also another member function to use to retrieve orphans. An orphan
@@ -1699,47 +1429,6 @@ To work around it, possible approaches are:
 A notable side effect of this feature is that the number of required allocations
 is further reduced in most of the cases.
 
-### More performance, more constraints
-
-Groups are a (much) faster alternative to views. However, the higher the
-performance, the greater the constraints on what is allowed and what is
-not.<br/>
-In particular, groups add in some rare cases a limitation on the creation of
-components during iterations. It happens in quite particular cases. Given the
-nature and the scope of the groups, it isn't something in which it will happen
-to come across probably, but it's good to know it anyway.
-
-First of all, it must be said that creating components while iterating a group
-isn't a problem at all and can be done freely as it happens with the views. The
-same applies to the destruction of components and entities, for which the rules
-mentioned above apply.
-
-The additional limitation pops out instead when a given component that is owned
-by a group is iterated outside of it. In this case, adding components that are
-part of the group itself may invalidate the iterators. There are no further
-limitations to the destruction of components and entities.<br/>
-Fortunately, this isn't always true. In fact, it almost never is and this
-happens only under certain conditions. In particular:
-
-* Iterating a type of component that is part of a group with a single component
-  view and adding to an entity all the components required to get it into the
-  group may invalidate the iterators.
-
-* Iterating a type of component that is part of a group with a multi component
-  view and adding to an entity all the components required to get it into the
-  group can invalidate the iterators, unless users specify another type of
-  component to use to induce the order of iteration of the view (in this case,
-  the former is treated as a free type and isn't affected by the limitation).
-
-In other words, the limitation doesn't exist as long as a type is treated as a
-free type (as an example with multi component views and partial- or non-owning
-groups) or iterated with its own group, but it can occur if the type is used as
-a main type to rule on an iteration.<br/>
-This happens because groups own the pools of their components and organize the
-data internally to maximize performance. Because of that, full consistency for
-owned components is guaranteed only when they are iterated as part of their
-groups or as free types with multi component views and groups in general.
-
 # Empty type optimization
 
 An empty type `T` is such that `std::is_empty_v<T>` returns true. They are also
@@ -1750,8 +1439,8 @@ mentioning.
 
 When an empty type is detected, it's not instantiated in any case. Therefore,
 only the entities to which it's assigned are made available.<br/>
-There doesn't exist a way to _iterate_ empty types. Views and groups will never
-return instances of empty types (for example, during a call to `each`) and some
+There doesn't exist a way to _iterate_ empty types. Views will never return
+instances of empty types (for example, during a call to `each`) and some
 functions such as `try_get` or the raw access to the list of components aren't
 available for them. Finally, the `sort` functionality accepts only callbacks
 that require to return entities rather than components:
@@ -1777,10 +1466,10 @@ case, empty types will be treated like all other types, no matter what.
 In general, the entire registry isn't thread safe as it is. Thread safety isn't
 something that users should want out of the box for several reasons. Just to
 mention one of them: performance.<br/>
-Views, groups and consequently the approach adopted by `EnTT` are the great
-exception to the rule. It's true that views, groups and iterators in general
-aren't thread safe by themselves. Because of this users shouldn't try to iterate
-a set of components and modify the same set concurrently. However:
+Views and consequently the approach adopted by `EnTT` are the great exception to
+the rule. It's true that views and iterators in general aren't thread safe by
+themselves. Because of this users shouldn't try to iterate a set of components
+and modify the same set concurrently. However:
 
 * As long as a thread iterates the entities that have the component `X` or
   assign and removes that component from a set of entities, another thread can
@@ -1808,16 +1497,16 @@ expedients.
 
 ## Iterators
 
-A special mention is needed for the iterators returned by views and groups. Most
-of the times they meet the requirements of random access iterators, in all cases
-they meet at least the requirements of bidirectional iterators.<br/>
+A special mention is needed for the iterators returned by views. Most of the
+times they meet the requirements of random access iterators, in all cases they
+meet at least the requirements of bidirectional iterators.<br/>
 In other terms, they are suitable for use with the parallel algorithms of the
 standard library. If it's not clear, this is a great thing.
 
 As an example, this kind of iterators can be used in combination with
 `std::for_each` and `std::execution::par` to parallelize the visit and therefore
-the update of the components returned by a view or a group, as long as the
-constraints previously discussed are respected:
+the update of the components returned by a view, as long as the constraints
+previously discussed are respected:
 
 ```cpp
 auto view = registry.view<position, const velocity>();

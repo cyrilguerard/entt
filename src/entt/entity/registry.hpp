@@ -16,7 +16,6 @@
 #include "../core/type_info.hpp"
 #include "entity.hpp"
 #include "fwd.hpp"
-#include "group.hpp"
 #include "pool.hpp"
 #include "runtime_view.hpp"
 #include "sparse_set.hpp"
@@ -34,7 +33,7 @@ namespace entt {
  * The registry is the core class of the entity-component framework.<br/>
  * It stores entities and arranges pools of components on a per request basis.
  * By means of a registry, users can manage entities and components, then create
- * views or groups to iterate them.
+ * views to iterate them.
  *
  * @tparam Entity A valid entity type (see entt_traits for more details).
  */
@@ -46,56 +45,6 @@ class basic_registry {
         type_info info{};
         std::unique_ptr<sparse_set<Entity>> pool{};
         void(* erase)(sparse_set<Entity> &, basic_registry &, const Entity);
-    };
-
-    template<typename...>
-    struct group_handler;
-
-    template<typename... Exclude, typename... Get, typename... Owned>
-    struct group_handler<exclude_t<Exclude...>, get_t<Get...>, Owned...> {
-        static_assert(std::conjunction_v<std::is_same<Owned, std::decay_t<Owned>>..., std::is_same<Get, std::decay_t<Get>>..., std::is_same<Exclude, std::decay_t<Exclude>>...>, "One or more component types are invalid");
-        std::conditional_t<sizeof...(Owned) == 0, sparse_set<Entity>, std::size_t> current{};
-
-        template<typename Component>
-        void maybe_valid_if(basic_registry &owner, const Entity entt) {
-            [[maybe_unused]] const auto cpools = std::forward_as_tuple(owner.assure<Owned>()...);
-
-            const auto is_valid = ((std::is_same_v<Component, Owned> || std::get<pool_t<Entity, Owned> &>(cpools).contains(entt)) && ...)
-                    && ((std::is_same_v<Component, Get> || owner.assure<Get>().contains(entt)) && ...)
-                    && ((std::is_same_v<Component, Exclude> || !owner.assure<Exclude>().contains(entt)) && ...);
-
-            if constexpr(sizeof...(Owned) == 0) {
-                if(is_valid && !current.contains(entt)) {
-                    current.emplace(entt);
-                }
-            } else {
-                if(is_valid && !(std::get<0>(cpools).index(entt) < current)) {
-                    const auto pos = current++;
-                    (std::get<pool_t<Entity, Owned> &>(cpools).swap(std::get<pool_t<Entity, Owned> &>(cpools).data()[pos], entt), ...);
-                }
-            }
-        }
-
-        void discard_if([[maybe_unused]] basic_registry &owner, const Entity entt) {
-            if constexpr(sizeof...(Owned) == 0) {
-                if(current.contains(entt)) {
-                    current.erase(entt);
-                }
-            } else {
-                if(const auto cpools = std::forward_as_tuple(owner.assure<Owned>()...); std::get<0>(cpools).contains(entt) && (std::get<0>(cpools).index(entt) < current)) {
-                    const auto pos = --current;
-                    (std::get<pool_t<Entity, Owned> &>(cpools).swap(std::get<pool_t<Entity, Owned> &>(cpools).data()[pos], entt), ...);
-                }
-            }
-        }
-    };
-
-    struct group_data {
-        std::size_t size;
-        std::unique_ptr<void, void(*)(void *)> group;
-        bool (* owned)(const id_type) ENTT_NOEXCEPT;
-        bool (* get)(const id_type) ENTT_NOEXCEPT;
-        bool (* exclude)(const id_type) ENTT_NOEXCEPT;
     };
 
     struct variable_data {
@@ -1091,12 +1040,6 @@ public:
      * Views in no way affect the functionalities of the registry nor those of
      * the underlying pools.
      *
-     * @note
-     * Multi component views are pretty fast. However their performance tend to
-     * degenerate when the number of components to iterate grows up and the most
-     * of the entities have all the given components.<br/>
-     * To get a performance boost, consider using a group instead.
-     *
      * @tparam Component Type of components used to construct the view.
      * @tparam Exclude Types of components used to filter the view.
      * @return A newly created view.
@@ -1161,188 +1104,6 @@ public:
     }
 
     /**
-     * @brief Returns a group for the given components.
-     *
-     * This kind of objects are created on the fly and share with the registry
-     * its internal data structures.<br/>
-     * Feel free to discard a group after the use. Creating and destroying a
-     * group is an incredibly cheap operation because they do not require any
-     * type of initialization, but for the first time they are requested.<br/>
-     * As a rule of thumb, storing a group should never be an option.
-     *
-     * Groups support exclusion lists and can own types of components. The more
-     * types are owned by a group, the faster it is to iterate entities and
-     * components.<br/>
-     * However, groups also affect some features of the registry such as the
-     * creation and destruction of components, which will consequently be
-     * slightly slower (nothing that can be noticed in most cases).
-     *
-     * @note
-     * Pools of components that are owned by a group cannot be sorted anymore.
-     * The group takes the ownership of the pools and arrange components so as
-     * to iterate them as fast as possible.
-     *
-     * @tparam Owned Types of components owned by the group.
-     * @tparam Get Types of components observed by the group.
-     * @tparam Exclude Types of components used to filter the group.
-     * @return A newly created group.
-     */
-    template<typename... Owned, typename... Get, typename... Exclude>
-    [[nodiscard]] basic_group<Entity, exclude_t<Exclude...>, get_t<Get...>, Owned...> group(get_t<Get...>, exclude_t<Exclude...> = {}) {
-        static_assert(sizeof...(Owned) + sizeof...(Get) > 0, "Exclusion-only views are not supported");
-        static_assert(sizeof...(Owned) + sizeof...(Get) + sizeof...(Exclude) > 1, "Single component groups are not allowed");
-
-        using handler_type = group_handler<exclude_t<Exclude...>, get_t<std::decay_t<Get>...>, std::decay_t<Owned>...>;
-
-        const auto cpools = std::forward_as_tuple(assure<std::decay_t<Owned>>()..., assure<std::decay_t<Get>>()...);
-        constexpr auto size = sizeof...(Owned) + sizeof...(Get) + sizeof...(Exclude);
-        handler_type *handler = nullptr;
-
-        if(auto it = std::find_if(groups.cbegin(), groups.cend(), [size](const auto &gdata) {
-            return gdata.size == size
-                && (gdata.owned(type_hash<std::decay_t<Owned>>::value()) && ...)
-                && (gdata.get(type_hash<std::decay_t<Get>>::value()) && ...)
-                && (gdata.exclude(type_hash<Exclude>::value()) && ...);
-        }); it != groups.cend())
-        {
-            handler = static_cast<handler_type *>(it->group.get());
-        }
-
-        if(!handler) {
-            group_data candidate = {
-                size,
-                { new handler_type{}, [](void *instance) { delete static_cast<handler_type *>(instance); } },
-                []([[maybe_unused]] const id_type ctype) ENTT_NOEXCEPT { return ((ctype == type_hash<std::decay_t<Owned>>::value()) || ...); },
-                []([[maybe_unused]] const id_type ctype) ENTT_NOEXCEPT { return ((ctype == type_hash<std::decay_t<Get>>::value()) || ...); },
-                []([[maybe_unused]] const id_type ctype) ENTT_NOEXCEPT { return ((ctype == type_hash<Exclude>::value()) || ...); },
-            };
-
-            handler = static_cast<handler_type *>(candidate.group.get());
-
-            const void *maybe_valid_if = nullptr;
-            const void *discard_if = nullptr;
-
-            if constexpr(sizeof...(Owned) == 0) {
-                groups.push_back(std::move(candidate));
-            } else {
-                ENTT_ASSERT(std::all_of(groups.cbegin(), groups.cend(), [size](const auto &gdata) {
-                    const auto overlapping = (0u + ... + gdata.owned(type_hash<std::decay_t<Owned>>::value()));
-                    const auto sz = overlapping + (0u + ... + gdata.get(type_hash<std::decay_t<Get>>::value())) + (0u + ... + gdata.exclude(type_hash<Exclude>::value()));
-                    return !overlapping || ((sz == size) || (sz == gdata.size));
-                }));
-
-                const auto next = std::find_if_not(groups.cbegin(), groups.cend(), [size](const auto &gdata) {
-                    return !(0u + ... + gdata.owned(type_hash<std::decay_t<Owned>>::value())) || (size > gdata.size);
-                });
-
-                const auto prev = std::find_if(std::make_reverse_iterator(next), groups.crend(), [](const auto &gdata) {
-                    return (0u + ... + gdata.owned(type_hash<std::decay_t<Owned>>::value()));
-                });
-
-                maybe_valid_if = (next == groups.cend() ? maybe_valid_if : next->group.get());
-                discard_if = (prev == groups.crend() ? discard_if : prev->group.get());
-                groups.insert(next, std::move(candidate));
-            }
-
-            (on_construct<std::decay_t<Owned>>().before(maybe_valid_if).template connect<&handler_type::template maybe_valid_if<std::decay_t<Owned>>>(*handler), ...);
-            (on_construct<std::decay_t<Get>>().before(maybe_valid_if).template connect<&handler_type::template maybe_valid_if<std::decay_t<Get>>>(*handler), ...);
-            (on_destroy<Exclude>().before(maybe_valid_if).template connect<&handler_type::template maybe_valid_if<Exclude>>(*handler), ...);
-
-            (on_destroy<std::decay_t<Owned>>().before(discard_if).template connect<&handler_type::discard_if>(*handler), ...);
-            (on_destroy<std::decay_t<Get>>().before(discard_if).template connect<&handler_type::discard_if>(*handler), ...);
-            (on_construct<Exclude>().before(discard_if).template connect<&handler_type::discard_if>(*handler), ...);
-
-            if constexpr(sizeof...(Owned) == 0) {
-                for(const auto entity: view<Owned..., Get...>(exclude<Exclude...>)) {
-                    handler->current.emplace(entity);
-                }
-            } else {
-                // we cannot iterate backwards because we want to leave behind valid entities in case of owned types
-                for(auto *first = std::get<0>(cpools).data(), *last = first + std::get<0>(cpools).size(); first != last; ++first) {
-                    handler->template maybe_valid_if<std::tuple_element_t<0, std::tuple<std::decay_t<Owned>...>>>(*this, *first);
-                }
-            }
-        }
-
-        if constexpr(sizeof...(Owned) == 0) {
-            return { handler->current, std::get<pool_t<Entity, std::decay_t<Get>> &>(cpools)... };
-        } else {
-            return { handler->current, std::get<pool_t<Entity, std::decay_t<Owned>> &>(cpools)... , std::get<pool_t<Entity, std::decay_t<Get>> &>(cpools)... };
-        }
-    }
-
-    /**
-     * @brief Returns a group for the given components.
-     *
-     * @sa group
-     *
-     * @tparam Owned Types of components owned by the group.
-     * @tparam Get Types of components observed by the group.
-     * @tparam Exclude Types of components used to filter the group.
-     * @return A newly created group.
-     */
-    template<typename... Owned, typename... Get, typename... Exclude>
-    [[nodiscard]] basic_group<Entity, exclude_t<Exclude...>, get_t<Get...>, Owned...> group(get_t<Get...>, exclude_t<Exclude...> = {}) const {
-        static_assert(std::conjunction_v<std::is_const<Owned>..., std::is_const<Get>...>, "Invalid non-const type");
-        return const_cast<basic_registry *>(this)->group<Owned...>(get_t<Get...>{}, exclude<Exclude...>);
-    }
-
-    /**
-     * @brief Returns a group for the given components.
-     *
-     * @sa group
-     *
-     * @tparam Owned Types of components owned by the group.
-     * @tparam Exclude Types of components used to filter the group.
-     * @return A newly created group.
-     */
-    template<typename... Owned, typename... Exclude>
-    [[nodiscard]] basic_group<Entity, exclude_t<Exclude...>, get_t<>, Owned...> group(exclude_t<Exclude...> = {}) {
-        return group<Owned...>(get_t<>{}, exclude<Exclude...>);
-    }
-
-    /**
-     * @brief Returns a group for the given components.
-     *
-     * @sa group
-     *
-     * @tparam Owned Types of components owned by the group.
-     * @tparam Exclude Types of components used to filter the group.
-     * @return A newly created group.
-     */
-    template<typename... Owned, typename... Exclude>
-    [[nodiscard]] basic_group<Entity, exclude_t<Exclude...>, get_t<>, Owned...> group(exclude_t<Exclude...> = {}) const {
-        static_assert(std::conjunction_v<std::is_const<Owned>...>, "Invalid non-const type");
-        return const_cast<basic_registry *>(this)->group<Owned...>(exclude<Exclude...>);
-    }
-
-    /**
-     * @brief Checks whether the given components belong to any group.
-     * @tparam Component Types of components in which one is interested.
-     * @return True if the pools of the given components are sortable, false
-     * otherwise.
-     */
-    template<typename... Component>
-    [[nodiscard]] bool sortable() const {
-        return std::none_of(groups.cbegin(), groups.cend(), [](auto &&gdata) { return (gdata.owned(type_hash<std::decay_t<Component>>::value()) || ...); });
-    }
-
-    /**
-     * @brief Checks whether a group can be sorted.
-     * @tparam Owned Types of components owned by the group.
-     * @tparam Get Types of components observed by the group.
-     * @tparam Exclude Types of components used to filter the group.
-     * @return True if the group can be sorted, false otherwise.
-     */
-    template<typename... Owned, typename... Get, typename... Exclude>
-    [[nodiscard]] bool sortable(const basic_group<Entity, exclude_t<Exclude...>, get_t<Get...>, Owned...> &) ENTT_NOEXCEPT {
-        constexpr auto size = sizeof...(Owned) + sizeof...(Get) + sizeof...(Exclude);
-        return std::find_if(groups.cbegin(), groups.cend(), [size](const auto &gdata) {
-            return (0u + ... + gdata.owned(type_hash<std::decay_t<Owned>>::value())) && (size < gdata.size);
-        }) == groups.cend();
-    }
-
-    /**
      * @brief Sorts the pool of entities for the given component.
      *
      * The order of the elements in a pool is highly affected by assignments
@@ -1376,11 +1137,6 @@ public:
      * necessarily the type of the one passed along with the other parameters to
      * this member function.
      *
-     * @warning
-     * Pools of components owned by a group cannot be sorted.<br/>
-     * An assertion will abort the execution at runtime in debug mode in case
-     * the pool is owned by a group.
-     *
      * @tparam Component Type of components to sort.
      * @tparam Compare Type of comparison function object.
      * @tparam Sort Type of sort function object.
@@ -1391,7 +1147,6 @@ public:
      */
     template<typename Component, typename Compare, typename Sort = std_sort, typename... Args>
     void sort(Compare compare, Sort algo = Sort{}, Args &&... args) {
-        ENTT_ASSERT(sortable<Component>());
         auto &cpool = assure<Component>();
         cpool.sort(cpool.begin(), cpool.end(), std::move(compare), std::move(algo), std::forward<Args>(args)...);
     }
@@ -1423,17 +1178,11 @@ public:
      *
      * Any subsequent change to `B` won't affect the order in `A`.
      *
-     * @warning
-     * Pools of components owned by a group cannot be sorted.<br/>
-     * An assertion will abort the execution at runtime in debug mode in case
-     * the pool is owned by a group.
-     *
      * @tparam To Type of components to sort.
      * @tparam From Type of components to use to sort.
      */
     template<typename To, typename From>
     void sort() {
-        ENTT_ASSERT(sortable<To>());
         assure<To>().respect(assure<From>());
     }
 
@@ -1614,7 +1363,6 @@ public:
     }
 
 private:
-    std::vector<group_data> groups{};
     mutable std::vector<pool_data> pools{};
     std::vector<entity_type> entities{};
     std::vector<variable_data> vars{};

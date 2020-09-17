@@ -79,24 +79,6 @@ I tried to describe some of the techniques that fit well with the model of
 first post of a series that tries to explore the problem. More will probably
 come in future.
 
-Long story short, you can always define a tree where the nodes expose implicit
-lists of children by means of the following type:
-
-```cpp
-struct relationship {
-    std::size_t children{};
-    entt::entity first{entt::null};
-    entt::entity prev{entt::null};
-    entt::entity next{entt::null};
-    entt::entity parent{entt::null};
-    // ... other data members ...
-};
-```
-
-The sort functionalities of `EnTT`, the groups and all the other features of the
-library can help then to get the best in terms of data locality and therefore
-performance from this component.
-
 ## Custom entity identifiers: yay or nay?
 
 Custom entity identifiers are definitely a good idea in two cases at least:

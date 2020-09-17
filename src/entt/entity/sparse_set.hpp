@@ -25,8 +25,8 @@ namespace entt {
  * _packed_ one; one used for direct access through contiguous memory, the other
  * one used to get the data through an extra level of indirection.<br/>
  * This is largely used by the registry to offer users the fastest access ever
- * to the components. Views and groups in general are almost entirely designed
- * around sparse sets.
+ * to the components. Views in general are almost entirely designed around
+ * sparse sets.
  *
  * This type of data structure is widely documented in the literature and on the
  * web. This is nothing more than a customized implementation suitable for the

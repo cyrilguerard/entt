@@ -20,10 +20,6 @@ template<typename>
 class basic_runtime_view;
 
 
-template<typename...>
-class basic_group;
-
-
 template<typename>
 class basic_observer;
 
@@ -90,14 +86,6 @@ using view = basic_view<entity, Types...>;
 
 /*! @brief Alias declaration for the most common use case. */
 using runtime_view = basic_runtime_view<entity>;
-
-
-/**
- * @brief Alias declaration for the most common use case.
- * @tparam Types Types of components iterated by the group.
- */
-template<typename... Types>
-using group = basic_group<entity, Types...>;
 
 
 }

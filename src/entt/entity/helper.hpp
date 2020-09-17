@@ -63,57 +63,6 @@ as_view(const basic_registry<Entity> &) ENTT_NOEXCEPT -> as_view<true, Entity>;
 
 
 /**
- * @brief Converts a registry to a group.
- * @tparam Const Constness of the accepted registry.
- * @tparam Entity A valid entity type (see entt_traits for more details).
- */
-template<bool Const, typename Entity>
-struct as_group {
-    /*! @brief Type of registry to convert. */
-    using registry_type = std::conditional_t<Const, const basic_registry<Entity>, basic_registry<Entity>>;
-
-    /**
-     * @brief Constructs a converter for a given registry.
-     * @param source A valid reference to a registry.
-     */
-    as_group(registry_type &source) ENTT_NOEXCEPT: reg{source} {}
-
-    /**
-     * @brief Conversion function from a registry to a group.
-     * @tparam Exclude Types of components used to filter the group.
-     * @tparam Get Types of components observed by the group.
-     * @tparam Owned Types of components owned by the group.
-     * @return A newly created group.
-     */
-    template<typename Exclude, typename Get, typename... Owned>
-    operator basic_group<Entity, Exclude, Get, Owned...>() const {
-        return reg.template group<Owned...>(Get{}, Exclude{});
-    }
-
-private:
-    registry_type &reg;
-};
-
-
-/**
- * @brief Deduction guide.
- *
- * It allows to deduce the constness of a registry directly from the instance
- * provided to the constructor.
- *
- * @tparam Entity A valid entity type (see entt_traits for more details).
- */
-template<typename Entity>
-as_group(basic_registry<Entity> &) ENTT_NOEXCEPT -> as_group<false, Entity>;
-
-
-/*! @copydoc as_group */
-template<typename Entity>
-as_group(const basic_registry<Entity> &) ENTT_NOEXCEPT -> as_group<true, Entity>;
-
-
-
-/**
  * @brief Helper to create a listener that directly invokes a member function.
  * @tparam Member Member function to invoke on a component of the given type.
  * @tparam Entity A valid entity type (see entt_traits for more details).

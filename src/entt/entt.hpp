@@ -8,7 +8,6 @@
 #include "core/type_traits.hpp"
 #include "core/utility.hpp"
 #include "entity/entity.hpp"
-#include "entity/group.hpp"
 #include "entity/handle.hpp"
 #include "entity/helper.hpp"
 #include "entity/observer.hpp"

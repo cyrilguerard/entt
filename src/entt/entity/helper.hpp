@@ -88,7 +88,8 @@ void invoke(basic_registry<Entity> &reg, const Entity entt) {
  */
 template<typename Entity, typename Component>
 Entity to_entity(const basic_registry<Entity> &reg, const Component &component) {
-    return *(reg.template data<Component>() + (&component - reg.template raw<Component>()));
+    auto view = reg.template view<std::add_const_t<std::decay_t<Component>>>();
+    return *(view.data() + (&component - view.raw()));
 }
 
 

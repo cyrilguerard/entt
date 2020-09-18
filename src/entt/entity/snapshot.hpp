@@ -120,7 +120,9 @@ public:
      */
     template<typename... Component, typename Archive>
     const basic_snapshot & component(Archive &archive) const {
-        (component<Component>(archive, reg->template data<Component>(), reg->template data<Component>() + reg->template size<Component>()), ...);
+        ([this, &archive](auto curr) {
+            component<Component>(archive, curr.rbegin(), curr.rend());
+        }(reg->view<std::add_const_t<Component>>()), ...);
         return *this;
     }
 

@@ -34,6 +34,19 @@ class basic_snapshot {
 
     using traits_type = entt_traits<Entity>;
 
+    template<typename Component, typename Archive, typename View>
+    void get(Archive &archive, View view) const {
+        archive(typename traits_type::entity_type(view.size()));
+
+        for(auto first = view.rbegin(), last = view.rend(); first != last; ++first) {
+            if constexpr(std::is_empty_v<Component>) {
+                archive(*first);
+            } else {
+                archive(*first, view.get(*first));
+            }
+        }
+    }
+
     template<typename Component, typename Archive, typename It>
     void get(Archive &archive, std::size_t sz, It first, It last) const {
         archive(typename traits_type::entity_type(sz));
@@ -120,9 +133,7 @@ public:
      */
     template<typename... Component, typename Archive>
     const basic_snapshot & component(Archive &archive) const {
-        ([this, &archive](auto curr) {
-            component<Component>(archive, curr.rbegin(), curr.rend());
-        }(reg->view<std::add_const_t<Component>>()), ...);
+        (get<Component>(archive, reg->template view<std::add_const_t<Component>>()), ...);
         return *this;
     }
 

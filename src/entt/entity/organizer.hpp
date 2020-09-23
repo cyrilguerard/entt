@@ -2,6 +2,7 @@
 #define ENTT_ENTITY_ORGANIZER_HPP
 
 
+#include <cstddef>
 #include <algorithm>
 #include <type_traits>
 #include <unordered_map>
@@ -66,17 +67,13 @@ resource<std::remove_reference_t<Args>...> to_resource(Ret(Class:: *)(Args...) c
 
 
 template<typename Entity>
-class basic_organizer {
-    struct node {
+class basic_organizer final {
+    struct node final {
         const char *name{};
         entt::type_info info{};
         void(* job)(const void *, entt::basic_registry<Entity> &){};
         const void *payload{};
         bool top_level{};
-    };
-
-    struct task_iterator {
-        // TODO
     };
 
     template<typename Type>

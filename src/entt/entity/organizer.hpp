@@ -9,7 +9,6 @@
 #include <vector>
 #include "../core/type_info.hpp"
 #include "../core/type_traits.hpp"
-#include "../signal/delegate.hpp"
 #include "fwd.hpp"
 #include "helper.hpp"
 
@@ -71,7 +70,8 @@ class basic_organizer {
     struct node {
         const char *name{};
         entt::type_info info{};
-        entt::delegate<void(entt::basic_registry<Entity> &)> func{};
+        void(* job)(const void *, entt::basic_registry<Entity> &){};
+        const void *payload{};
         bool top_level{};
     };
 
@@ -192,10 +192,10 @@ public:
         item.name = name;
         item.top_level = false;
         item.info = type_id<integral_constant<Candidate>>();
-        item.func.connect(+[](const void *, basic_registry<entity_type> &registry) {
+        item.job = +[](const void *, basic_registry<entity_type> &registry) {
             auto arguments = to_args(registry, resource_type::type{});
             std::apply(Candidate, arguments);
-        });
+        };
 
         track_dependencies(index, resource_type::ro{}, resource_type::rw{});
     }
@@ -209,11 +209,12 @@ public:
         item.name = name;
         item.top_level = false;
         item.info = type_id<integral_constant<Candidate>>();
-        item.func.connect(+[](const void *payload, basic_registry<entity_type> &registry) {
+        item.payload = &value_or_instance;
+        item.job = +[](const void *payload, basic_registry<entity_type> &registry) {
             Type *curr = static_cast<Type *>(const_cast<std::conditional_t<std::is_const_v<Type>, const void *, void *>>(payload));
             auto arguments = std::tuple_cat(std::forward_as_tuple(*curr), to_args(registry, resource_type::type{}));
             std::apply(Candidate, arguments);
-        }, &value_or_instance);
+        };
 
         track_dependencies(index, resource_type::ro{}, resource_type::rw{});
     }
@@ -228,6 +229,8 @@ public:
         {}
 
     public:
+        using job_type = void(const void *, basic_registry<entity_type> &);
+
         task() = default;
 
         const char * name() const ENTT_NOEXCEPT {
@@ -240,6 +243,14 @@ public:
 
         bool top_level() const ENTT_NOEXCEPT {
             return (*nodes)[index].top_level;
+        }
+
+        job_type * job() const ENTT_NOEXCEPT {
+            return (*nodes)[index].job;
+        }
+
+        const void * data() const ENTT_NOEXCEPT {
+            return (*nodes)[index].data;
         }
 
         explicit operator bool() const ENTT_NOEXCEPT {

@@ -30,37 +30,38 @@ template<typename Type>
 inline constexpr bool is_view_v = is_view<Type>::value;
 
 
-template<typename... Type>
-struct resource {
-    using type = type_list_cat_t<typename resource<Type>::type...>;
-    using ro = type_list_cat_t<typename resource<Type>::ro...>;
-    using rw = type_list_cat_t<typename resource<Type>::rw...>;
-};
-
-
 template<typename Type>
-struct resource<Type> {
-    using type = type_list<std::remove_const_t<Type>>;
+struct unpack_type {
     using ro = std::conditional_t<std::is_const_v<Type>, type_list<std::remove_const_t<Type>>, type_list<>>;
     using rw = std::conditional_t<std::is_const_v<Type>, type_list<>, type_list<Type>>;
 };
 
 template<typename Entity, typename... Exclude, typename... Component>
-struct resource<basic_view<Entity, exclude_t<Exclude...>, Component...>> {
-    using type = type_list<basic_view<Entity, exclude_t<Exclude...>, Component...>>;
+struct unpack_type<basic_view<Entity, exclude_t<Exclude...>, Component...>> {
     using ro = type_list_cat_t<type_list<Exclude...>, type_list_cat_t<std::conditional_t<std::is_const_v<Component>, type_list<std::remove_const_t<Component>>, type_list<>>...>>;
     using rw = type_list_cat_t<type_list_cat_t<std::conditional_t<std::is_const_v<Component>, type_list<>, type_list<Component>>...>>;
 };
 
 
-template<typename Ret, typename... Args>
-resource<std::remove_reference_t<Args>...> to_resource(Ret(*)(Args...));
+template<typename, typename>
+struct resource;
 
-template<typename Ret, typename Class, typename... Args>
-resource<std::remove_reference_t<Args>...> to_resource(Ret(Class:: *)(Args...));
+template<typename... Args, typename... Req>
+struct resource<type_list<Args...>, type_list<Req...>> {
+    using args = type_list<std::remove_const_t<Args>...>;
+    using ro = type_list_cat_t<typename unpack_type<Args>::ro..., typename unpack_type<Req>::ro...>;
+    using rw = type_list_cat_t<typename unpack_type<Args>::rw..., typename unpack_type<Req>::rw...>;
+};
 
-template<typename Ret, typename Class, typename... Args>
-resource<std::remove_reference_t<Args>...> to_resource(Ret(Class:: *)(Args...) const);
+
+template<typename... Req, typename Ret, typename... Args>
+resource<type_list<std::remove_reference_t<Args>...>, type_list<Req...>> to_resource(Ret(*)(Args...));
+
+template<typename... Req, typename Ret, typename Class, typename... Args>
+resource<type_list<std::remove_reference_t<Args>...>, type_list<Req...>> to_resource(Ret(Class:: *)(Args...));
+
+template<typename... Req, typename Ret, typename Class, typename... Args>
+resource<type_list<std::remove_reference_t<Args>...>, type_list<Req...>> to_resource(Ret(Class:: *)(Args...) const);
 
 
 }
@@ -77,8 +78,10 @@ class basic_organizer final {
     };
 
     template<typename Type>
-    static decltype(auto) extract(basic_registry<Entity> &registry) {
-        if constexpr(internal::is_view_v<Type>) {
+    [[nodiscard]] static decltype(auto) extract(basic_registry<Entity> &registry) {
+        if constexpr(std::is_same_v<Type, basic_registry<Entity>>) {
+            return std::ref(registry);
+        } else if constexpr(internal::is_view_v<Type>) {
             return as_view{registry};
         } else {
             return registry.template ctx<std::remove_reference_t<Type>>();
@@ -86,7 +89,7 @@ class basic_organizer final {
     }
 
     template<typename... Args>
-    static auto to_args(basic_registry<Entity> &registry, type_list<Args...>) {
+    [[nodiscard]] static auto to_args(basic_registry<Entity> &registry, type_list<Args...>) {
         return std::forward_as_tuple(extract<Args>(registry)...);
     }
 
@@ -180,55 +183,14 @@ public:
     using entity_type = Entity;
     using size_type = std::size_t;
 
-    template<auto Candidate>
-    void emplace(const char *name = nullptr) {
-        using resource_type = decltype(internal::to_resource(Candidate));
-        const auto index = nodes.size();
-        auto &item = nodes.emplace_back();
+    struct task {
+        using job_type = void(const void *, basic_registry<entity_type> &);
 
-        item.name = name;
-        item.top_level = false;
-        item.info = type_id<integral_constant<Candidate>>();
-        item.job = +[](const void *, basic_registry<entity_type> &registry) {
-            auto arguments = to_args(registry, typename resource_type::type{});
-            std::apply(Candidate, arguments);
-        };
-
-        track_dependencies(index, typename resource_type::ro{}, typename resource_type::rw{});
-    }
-
-    template<auto Candidate, typename Type>
-    void emplace(Type &value_or_instance, const char *name = nullptr) {
-        using resource_type = decltype(internal::to_resource(Candidate));
-        const auto index = nodes.size();
-        auto &item = nodes.emplace_back();
-
-        item.name = name;
-        item.top_level = false;
-        item.info = type_id<integral_constant<Candidate>>();
-        item.payload = &value_or_instance;
-        item.job = +[](const void *payload, basic_registry<entity_type> &registry) {
-            Type *curr = static_cast<Type *>(const_cast<std::conditional_t<std::is_const_v<Type>, const void *, void *>>(payload));
-            auto arguments = std::tuple_cat(std::forward_as_tuple(*curr), to_args(registry, typename resource_type::type{}));
-            std::apply(Candidate, arguments);
-        };
-
-        track_dependencies(index, typename resource_type::ro{}, typename resource_type::rw{});
-    }
-
-    class task {
-        friend class basic_organizer<entity_type>;
-
-        task(std::vector<node> &vert, std::vector<bool> &deps, const std::size_t curr)
+        task(const std::vector<node> &vert, const std::vector<bool> &deps, const std::size_t curr)
             : nodes{&vert},
               edges{&deps},
               index{curr}
         {}
-
-    public:
-        using job_type = void(const void *, basic_registry<entity_type> &);
-
-        task() = default;
 
         const char * name() const ENTT_NOEXCEPT {
             return (*nodes)[index].name;
@@ -254,39 +216,142 @@ public:
             return (nodes != nullptr);
         }
 
-        template<typename Func>
-        void parent(Func func) {
-            for(std::size_t pos{}, length = nodes->size(); pos < length; ++pos) {
-                if((*edges)[pos * length + index]) {
-                    func(task{*nodes, *edges, pos});
-                }
-            }
-        }
-
-        template<typename Func>
-        void children(Func func) {
-            for(std::size_t pos{}, length = nodes->size(), row = index * length; pos < length; ++pos) {
-                if((*edges)[row + pos]) {
-                    func(task{*nodes, *edges, pos});
-                }
-            }
-        }
-
     private:
-        std::vector<node> *nodes;
-        std::vector<bool> *edges;
+        const std::vector<node> *nodes;
+        const std::vector<bool> *edges;
         std::size_t index{};
     };
 
-    template<typename Func>
-    void visit(Func func) {
+    struct iterator {
+        using difference_type = std::ptrdiff_t;
+        using value_type = task;
+        using pointer = void;
+        using reference = value_type;
+        using iterator_category = std::input_iterator_tag;
+
+        iterator(std::size_t(* check)(std::size_t, const std::vector<node> &, const std::vector<bool> &), const std::vector<node> &vert, const std::vector<bool> &deps, const std::size_t curr)
+            : next{check},
+              nodes{&vert},
+              edges{&deps},
+              index{curr}
+        {}
+
+        iterator & operator++() ENTT_NOEXCEPT {
+            index = next(index, *nodes, *edges);
+            return *this;
+        }
+
+        iterator operator++(int) ENTT_NOEXCEPT {
+            iterator orig = *this;
+            return ++(*this), orig;
+        }
+
+        [[nodiscard]] reference operator*() const ENTT_NOEXCEPT {
+            return reference{*nodes, *edges, index};
+        }
+
+        [[nodiscard]] bool operator==(const iterator &other) const ENTT_NOEXCEPT {
+            return other.index == index;
+        }
+
+        [[nodiscard]] bool operator!=(const iterator &other) const ENTT_NOEXCEPT {
+            return !(*this == other);
+        }
+
+    private:
+        std::size_t(* next)(std::size_t, const std::vector<node> &, const std::vector<bool> &){};
+        const std::vector<node> *nodes{};
+        const std::vector<bool> *edges{};
+        std::size_t index{};
+    };
+
+    struct range {
+        range(std::size_t(* check)(std::size_t, const std::vector<node> &, const std::vector<bool> &), const std::vector<node> &vert, const std::vector<bool> &deps, const std::size_t curr)
+            : next{check},
+              nodes{&vert},
+              edges{&deps},
+              index{curr}
+        {}
+
+        [[nodiscard]] iterator begin() const ENTT_NOEXCEPT {
+            return iterator{next, *nodes, *edges, index};
+        }
+
+        [[nodiscard]] iterator end() const ENTT_NOEXCEPT {
+            return iterator{next, *nodes, *edges, nodes->size()};
+        }
+
+    private:
+        std::size_t(* next)(std::size_t, const std::vector<node> &, const std::vector<bool> &){};
+        const std::vector<node> *nodes{};
+        const std::vector<bool> *edges{};
+        std::size_t index{};
+    };
+
+    template<auto Candidate, typename... Req>
+    void emplace(const char *name = nullptr) {
+        using resource_type = decltype(internal::to_resource<Req...>(Candidate));
+        const auto index = nodes.size();
+        auto &item = nodes.emplace_back();
+
+        item.name = name;
+        item.top_level = false;
+        item.info = type_id<integral_constant<Candidate>>();
+        item.job = +[](const void *, basic_registry<entity_type> &registry) {
+            auto arguments = to_args(registry, typename resource_type::args{});
+            std::apply(Candidate, arguments);
+        };
+
+        track_dependencies(index, typename resource_type::ro{}, typename resource_type::rw{});
+    }
+
+    template<auto Candidate, typename... Req, typename Type>
+    void emplace(Type &value_or_instance, const char *name = nullptr) {
+        using resource_type = decltype(internal::to_resource<Req...>(Candidate));
+        const auto index = nodes.size();
+        auto &item = nodes.emplace_back();
+
+        item.name = name;
+        item.top_level = false;
+        item.info = type_id<integral_constant<Candidate>>();
+        item.payload = &value_or_instance;
+        item.job = +[](const void *payload, basic_registry<entity_type> &registry) {
+            Type *curr = static_cast<Type *>(const_cast<std::conditional_t<std::is_const_v<Type>, const void *, void *>>(payload));
+            auto arguments = std::tuple_cat(std::forward_as_tuple(*curr), to_args(registry, typename resource_type::args{}));
+            std::apply(Candidate, arguments);
+        };
+
+        track_dependencies(index, typename resource_type::ro{}, typename resource_type::rw{});
+    }
+
+    [[nodiscard]] range visit() ENTT_NOEXCEPT {
         refresh_graph();
+        auto next = [](std::size_t index, const std::vector<node> &, const std::vector<bool> &) { return ++index; };
+        return range{next, nodes, edges, {}};
+    }
+
+    [[nodiscard]] range top_level() ENTT_NOEXCEPT {
+        refresh_graph();
+
+        auto next = [](std::size_t index, const std::vector<node> &nodes, const std::vector<bool> &) {
+            const auto last = nodes.size();
+            while(++index < last && !nodes[index].top_level);
+            return index;
+        };
 
         for(std::size_t pos{}, last = nodes.size(); pos < last; ++pos) {
             if(nodes[pos].top_level) {
-                func(task{nodes, edges, pos});
+                return range{next, nodes, edges, pos};
             }
         }
+
+        return range{next, nodes, edges, nodes.size()};
+    }
+
+    void clear() {
+        edges.clear();
+        dependencies.clear();
+        nodes.clear();
     }
 
 private:

@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-#include <entt/core/utility.hpp>
 #include <entt/entity/organizer.hpp>
 #include <entt/entity/registry.hpp>
 
@@ -21,18 +20,7 @@ TEST(Organizer, TODO) {
     organizer.emplace<&t4>("t4");
     organizer.emplace<&t5>("t5");
 
-    std::cout << "pre" << std::endl;
-    int tab = 0;
-
-    entt::y_combinator visitor([&tab](auto &self, auto task) {
-        for(auto i = 0; i < tab; ++i) { std::cout << "\t"; }
+    for(auto &&task: organizer.top_level()) {
         std::cout << "[" << task.top_level() << "]" << task.name() << std::endl;
-
-        ++tab;
-        task.children(self);
-        --tab;
-    });
-
-    organizer.visit(visitor);
-    std::cout << "post" << std::endl;
+    }
 }

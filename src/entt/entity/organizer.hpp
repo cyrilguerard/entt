@@ -234,7 +234,7 @@ public:
             return (*nodes)[index].name;
         }
 
-        type_info type_info() const ENTT_NOEXCEPT {
+        type_info info() const ENTT_NOEXCEPT {
             return (*nodes)[index].type_info;
         }
 

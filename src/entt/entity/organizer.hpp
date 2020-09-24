@@ -32,9 +32,9 @@ inline constexpr bool is_view_v = is_view<Type>::value;
 
 template<typename... Type>
 struct resource {
-    using type = type_list_cat_t<resource<Type>::template type...>;
-    using ro = type_list_cat_t<resource<Type>::template ro...>;
-    using rw = type_list_cat_t<resource<Type>::template rw...>;
+    using type = type_list_cat_t<typename resource<Type>::type...>;
+    using ro = type_list_cat_t<typename resource<Type>::ro...>;
+    using rw = type_list_cat_t<typename resource<Type>::rw...>;
 };
 
 
@@ -81,7 +81,7 @@ class basic_organizer final {
         if constexpr(internal::is_view_v<Type>) {
             return as_view{registry};
         } else {
-            return registry.ctx<std::remove_reference_t<Type>>();
+            return registry.template ctx<std::remove_reference_t<Type>>();
         }
     }
 
@@ -190,11 +190,11 @@ public:
         item.top_level = false;
         item.info = type_id<integral_constant<Candidate>>();
         item.job = +[](const void *, basic_registry<entity_type> &registry) {
-            auto arguments = to_args(registry, resource_type::type{});
+            auto arguments = to_args(registry, typename resource_type::type{});
             std::apply(Candidate, arguments);
         };
 
-        track_dependencies(index, resource_type::ro{}, resource_type::rw{});
+        track_dependencies(index, typename resource_type::ro{}, typename resource_type::rw{});
     }
 
     template<auto Candidate, typename Type>
@@ -209,11 +209,11 @@ public:
         item.payload = &value_or_instance;
         item.job = +[](const void *payload, basic_registry<entity_type> &registry) {
             Type *curr = static_cast<Type *>(const_cast<std::conditional_t<std::is_const_v<Type>, const void *, void *>>(payload));
-            auto arguments = std::tuple_cat(std::forward_as_tuple(*curr), to_args(registry, resource_type::type{}));
+            auto arguments = std::tuple_cat(std::forward_as_tuple(*curr), to_args(registry, typename resource_type::type{}));
             std::apply(Candidate, arguments);
         };
 
-        track_dependencies(index, resource_type::ro{}, resource_type::rw{});
+        track_dependencies(index, typename resource_type::ro{}, typename resource_type::rw{});
     }
 
     class task {

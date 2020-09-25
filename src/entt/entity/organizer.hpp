@@ -82,19 +82,19 @@ class basic_organizer final {
     };
 
     template<typename Type>
-    [[nodiscard]] static decltype(auto) extract(basic_registry<Entity> &registry) {
+    [[nodiscard]] static decltype(auto) extract(basic_registry<Entity> &reg) {
         if constexpr(std::is_same_v<Type, basic_registry<Entity>>) {
-            return std::ref(registry);
+            return std::ref(reg);
         } else if constexpr(internal::is_view_v<Type>) {
-            return as_view{registry};
+            return as_view{reg};
         } else {
-            return registry.template ctx<std::remove_reference_t<Type>>();
+            return reg.template ctx<std::remove_reference_t<Type>>();
         }
     }
 
     template<typename... Args>
-    [[nodiscard]] static auto to_args(basic_registry<Entity> &registry, type_list<Args...>) {
-        return std::forward_as_tuple(extract<Args>(registry)...);
+    [[nodiscard]] static auto to_args(basic_registry<Entity> &reg, type_list<Args...>) {
+        return std::forward_as_tuple(extract<Args>(reg)...);
     }
 
     template<typename... RO, typename... RW>
@@ -214,8 +214,8 @@ public:
         using resource_type = decltype(internal::to_resource<Req...>(Candidate));
         track_dependencies(vertices.size(), typename resource_type::ro{}, typename resource_type::rw{});
 
-        vertices.push_back({ name, +[](const void *, basic_registry<entity_type> &registry) {
-            auto arguments = to_args(registry, typename resource_type::args{});
+        vertices.push_back({ name, +[](const void *, basic_registry<entity_type> &reg) {
+            auto arguments = to_args(reg, typename resource_type::args{});
             std::apply(Candidate, arguments);
         }, nullptr, type_id<integral_constant<Candidate>>() });
     }
@@ -225,9 +225,9 @@ public:
         using resource_type = decltype(internal::to_resource<Req...>(Candidate));
         track_dependencies(vertices.size(), typename resource_type::ro{}, typename resource_type::rw{});
 
-        vertices.push_back({ name, +[](const void *payload, basic_registry<entity_type> &registry) {
+        vertices.push_back({ name, +[](const void *payload, basic_registry<entity_type> &reg) {
             Type *curr = static_cast<Type *>(const_cast<std::conditional_t<std::is_const_v<Type>, const void *, void *>>(payload));
-            auto arguments = std::tuple_cat(std::forward_as_tuple(*curr), to_args(registry, typename resource_type::args{}));
+            auto arguments = std::tuple_cat(std::forward_as_tuple(*curr), to_args(reg, typename resource_type::args{}));
             std::apply(Candidate, arguments);
         }, &value_or_instance, type_id<integral_constant<Candidate>>() });
     }

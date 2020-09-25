@@ -17,6 +17,12 @@
 namespace entt {
 
 
+// TODO
+// - sync point: no resource declared => block all existing resources
+// - lock the pool/context var creation section (also in the dispatcher)
+// - doc, tests
+
+
 namespace internal {
 
 

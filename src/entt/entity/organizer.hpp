@@ -248,7 +248,6 @@ public:
 
         for(std::size_t pos{}, length = vertices.size(); pos < length; ++pos) {
             std::vector<std::size_t> reachable{};
-            const auto &curr = vertices[pos];
             const auto row = pos * length;
 
             for(std::size_t col{}; col < length; ++col) {

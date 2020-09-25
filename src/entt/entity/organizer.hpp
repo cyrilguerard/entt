@@ -72,11 +72,13 @@ resource<type_list<>, type_list<Req...>> to_resource();
 
 template<typename Entity>
 class basic_organizer final {
+    using callback_type = void(const void *, entt::basic_registry<Entity> &);
+
     struct vertex_data final {
-        type_info info{};
         const char *name{};
-        void(* task)(const void *, entt::basic_registry<Entity> &){};
+        callback_type *callback{};
         const void *payload{};
+        type_info info{};
     };
 
     template<typename Type>
@@ -101,90 +103,7 @@ class basic_organizer final {
         (dependencies[type_hash<RW>::value()].emplace_back(index, true), ...);
     }
 
-public:
-    using entity_type = Entity;
-    using size_type = std::size_t;
-    using function_type = void(const void *, entt::basic_registry<Entity> &);
-
-    struct vertex {
-        vertex(vertex_data data, std::vector<std::size_t> edges)
-            : node{std::move(data)},
-              reachable{std::move(edges)}
-        {}
-
-        type_info info() const ENTT_NOEXCEPT {
-            return node.info;
-        }
-
-        const char * name() const ENTT_NOEXCEPT {
-            return node.name;
-        }
-
-        function_type * task() const ENTT_NOEXCEPT {
-            return node.task;
-        }
-
-        const void * data() const ENTT_NOEXCEPT {
-            return node.payload;
-        }
-
-        const std::vector<std::size_t> & children() const ENTT_NOEXCEPT {
-            return reachable;
-        }
-
-    private:
-        vertex_data node;
-        std::vector<std::size_t> reachable;
-    };
-
-    template<auto Candidate, typename... Req>
-    void emplace(const char *name = nullptr) {
-        using resource_type = decltype(internal::to_resource<Req...>(Candidate));
-        const auto index = vertices.size();
-        auto &item = vertices.emplace_back();
-
-        item.name = name;
-        item.info = type_id<integral_constant<Candidate>>();
-        item.task = +[](const void *, basic_registry<entity_type> &registry) {
-            auto arguments = to_args(registry, typename resource_type::args{});
-            std::apply(Candidate, arguments);
-        };
-
-        track_dependencies(index, typename resource_type::ro{}, typename resource_type::rw{});
-    }
-
-    template<auto Candidate, typename... Req, typename Type>
-    void emplace(Type &value_or_instance, const char *name = nullptr) {
-        using resource_type = decltype(internal::to_resource<Req...>(Candidate));
-        const auto index = vertices.size();
-        auto &item = vertices.emplace_back();
-
-        item.name = name;
-        item.info = type_id<integral_constant<Candidate>>();
-        item.payload = &value_or_instance;
-        item.task = +[](const void *payload, basic_registry<entity_type> &registry) {
-            Type *curr = static_cast<Type *>(const_cast<std::conditional_t<std::is_const_v<Type>, const void *, void *>>(payload));
-            auto arguments = std::tuple_cat(std::forward_as_tuple(*curr), to_args(registry, typename resource_type::args{}));
-            std::apply(Candidate, arguments);
-        };
-
-        track_dependencies(index, typename resource_type::ro{}, typename resource_type::rw{});
-    }
-
-    template<typename... Req>
-    void emplace(function_type *func, const void *data = nullptr, const char *name = nullptr) {
-        using resource_type = decltype(internal::to_resource<Req...>());
-        const auto index = vertices.size();
-        auto &item = vertices.emplace_back();
-
-        item.name = name;
-        item.payload = &data;
-        item.task = func;
-
-        track_dependencies(index, typename resource_type::ro{}, typename resource_type::rw{});
-    }
-
-    std::vector<vertex> adjacency_list() {
+    std::vector<bool> adjacency_matrix() {
         const auto length = vertices.size();
         std::vector<bool> edges(length * length, false);
 
@@ -251,9 +170,81 @@ public:
             }
         }
 
+        return edges;
+    }
+
+public:
+    using entity_type = Entity;
+    using size_type = std::size_t;
+    using function_type = callback_type;
+
+    struct vertex {
+        vertex(vertex_data data, std::vector<std::size_t> edges)
+            : node{std::move(data)},
+              reachable{std::move(edges)}
+        {}
+
+        type_info info() const ENTT_NOEXCEPT {
+            return node.info;
+        }
+
+        const char * name() const ENTT_NOEXCEPT {
+            return node.name;
+        }
+
+        function_type * callback() const ENTT_NOEXCEPT {
+            return node.callback;
+        }
+
+        const void * data() const ENTT_NOEXCEPT {
+            return node.payload;
+        }
+
+        const std::vector<std::size_t> & children() const ENTT_NOEXCEPT {
+            return reachable;
+        }
+
+    private:
+        vertex_data node;
+        std::vector<std::size_t> reachable;
+    };
+
+    template<auto Candidate, typename... Req>
+    void emplace(const char *name = nullptr) {
+        using resource_type = decltype(internal::to_resource<Req...>(Candidate));
+        track_dependencies(vertices.size(), typename resource_type::ro{}, typename resource_type::rw{});
+
+        vertices.push_back({ name, +[](const void *, basic_registry<entity_type> &registry) {
+            auto arguments = to_args(registry, typename resource_type::args{});
+            std::apply(Candidate, arguments);
+        }, nullptr, type_id<integral_constant<Candidate>>() });
+    }
+
+    template<auto Candidate, typename... Req, typename Type>
+    void emplace(Type &value_or_instance, const char *name = nullptr) {
+        using resource_type = decltype(internal::to_resource<Req...>(Candidate));
+        track_dependencies(vertices.size(), typename resource_type::ro{}, typename resource_type::rw{});
+
+        vertices.push_back({ name, +[](const void *payload, basic_registry<entity_type> &registry) {
+            Type *curr = static_cast<Type *>(const_cast<std::conditional_t<std::is_const_v<Type>, const void *, void *>>(payload));
+            auto arguments = std::tuple_cat(std::forward_as_tuple(*curr), to_args(registry, typename resource_type::args{}));
+            std::apply(Candidate, arguments);
+        }, &value_or_instance, type_id<integral_constant<Candidate>>() });
+    }
+
+    template<typename... Req>
+    void emplace(function_type *func, const void *data = nullptr, const char *name = nullptr) {
+        using resource_type = decltype(internal::to_resource<Req...>());
+        track_dependencies(vertices.size(), typename resource_type::ro{}, typename resource_type::rw{});
+        vertices.emplace_back({ name, callback, data, {} });
+    }
+
+    std::vector<vertex> graph() {
+        const auto edges = adjacency_matrix();
+
         // creates the adjacency list
-        std::vector<vertex> graph{};
-        graph.reserve(vertices.size());
+        std::vector<vertex> adjacency_list{};
+        adjacency_list.reserve(vertices.size());
 
         for(std::size_t pos{}, length = vertices.size(); pos < length; ++pos) {
             std::vector<std::size_t> reachable{};
@@ -266,10 +257,10 @@ public:
                 }
             }
 
-            graph.emplace_back(vertices[pos], std::move(reachable));
+            adjacency_list.emplace_back(vertices[pos], std::move(reachable));
         }
 
-        return graph;
+        return adjacency_list;
     }
 
     void clear() {

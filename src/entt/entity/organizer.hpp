@@ -63,18 +63,20 @@ resource<type_list<std::remove_reference_t<Args>...>, type_list<Req...>> to_reso
 template<typename... Req, typename Ret, typename Class, typename... Args>
 resource<type_list<std::remove_reference_t<Args>...>, type_list<Req...>> to_resource(Ret(Class:: *)(Args...) const);
 
+template<typename... Req>
+resource<type_list<>, type_list<Req...>> to_resource();
+
 
 }
 
 
 template<typename Entity>
 class basic_organizer final {
-    struct node final {
+    struct vertex_data final {
+        type_info info{};
         const char *name{};
-        entt::type_info info{};
-        void(* job)(const void *, entt::basic_registry<Entity> &){};
+        void(* task)(const void *, entt::basic_registry<Entity> &){};
         const void *payload{};
-        bool top_level{};
     };
 
     template<typename Type>
@@ -95,209 +97,55 @@ class basic_organizer final {
 
     template<typename... RO, typename... RW>
     void track_dependencies(std::size_t index, type_list<RO...>, type_list<RW...>) {
-        edges.clear();
         (dependencies[type_hash<RO>::value()].emplace_back(index, false), ...);
         (dependencies[type_hash<RW>::value()].emplace_back(index, true), ...);
-    }
-
-    void refresh_graph() {
-        if(edges.empty()) {
-            const auto length = nodes.size();
-            edges.resize(length * length, false);
-
-            // creates the ajacency matrix
-            for(const auto &deps: dependencies) {
-                const auto last = deps.second.cend();
-                auto it = deps.second.cbegin();
-
-                while(it != last) {
-                    if(it->second) {
-                        // rw item
-                        if(auto curr = it++; it != last) {
-                            if(it->second) {
-                                edges[curr->first * length + it->first] = true;
-                            } else {
-                                if(const auto next = std::find_if(it, last, [](const auto &elem) { return elem.second; }); next != last) {
-                                    for(; it != next; ++it) {
-                                        edges[curr->first * length + it->first] = true;
-                                        edges[it->first * length + next->first] = true;
-                                    }
-                                } else {
-                                    for(; it != next; ++it) {
-                                        edges[curr->first * length + it->first] = true;
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        // ro item, possibly only on first iteration
-                        if(const auto next = std::find_if(it, last, [](const auto &elem) { return elem.second; }); next != last) {
-                            for(; it != next; ++it) {
-                                edges[it->first * length + next->first] = true;
-                            }
-                        } else {
-                            it = last;
-                        }
-                    }
-                }
-            }
-
-            // computes the transitive closure
-            for(std::size_t vk{}; vk < length; ++vk) {
-                for(std::size_t vi{}; vi < length; ++vi) {
-                    for(std::size_t vj{}; vj < length; ++vj) {
-                        edges[vi * length + vj] = edges[vi * length + vj] || (edges[vi * length + vk] && edges[vk * length + vj]);
-                    }
-                }
-            }
-
-            // applies the transitive reduction
-            for(std::size_t vert{}; vert < length; ++vert) {
-                edges[vert * length + vert] = false;
-            }
-
-            for(std::size_t vj{}; vj < length; ++vj) {
-                for(std::size_t vi{}; vi < length; ++vi) {
-                    if(edges[vi * length + vj]) {
-                        for(std::size_t vk{}; vk < length; ++vk) {
-                            if(edges[vj * length + vk]) {
-                                edges[vi * length + vk] = false;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // finds top level nodes
-            for(std::size_t vi{}; vi < length; ++vi) {
-                nodes[vi].top_level = true;
-
-                for(std::size_t vk{}; nodes[vi].top_level && vk < length; ++vk) {
-                    nodes[vi].top_level = !edges[vk * length + vi];
-                }
-            }
-        }
     }
 
 public:
     using entity_type = Entity;
     using size_type = std::size_t;
+    using function_type = void(const void *, entt::basic_registry<Entity> &);
 
-    struct task {
-        using job_type = void(const void *, basic_registry<entity_type> &);
-
-        task(const std::vector<node> &vert, const std::vector<bool> &deps, const std::size_t curr)
-            : nodes{&vert},
-              edges{&deps},
-              index{curr}
+    struct vertex {
+        vertex(vertex_data data, std::vector<std::size_t> edges)
+            : node{std::move(data)},
+              reachable{std::move(edges)}
         {}
 
-        const char * name() const ENTT_NOEXCEPT {
-            return (*nodes)[index].name;
-        }
-
         type_info info() const ENTT_NOEXCEPT {
-            return (*nodes)[index].type_info;
+            return node.info;
         }
 
-        bool top_level() const ENTT_NOEXCEPT {
-            return (*nodes)[index].top_level;
+        const char * name() const ENTT_NOEXCEPT {
+            return node.name;
         }
 
-        job_type * job() const ENTT_NOEXCEPT {
-            return (*nodes)[index].job;
+        function_type * task() const ENTT_NOEXCEPT {
+            return node.task;
         }
 
         const void * data() const ENTT_NOEXCEPT {
-            return (*nodes)[index].data;
+            return node.payload;
         }
 
-        explicit operator bool() const ENTT_NOEXCEPT {
-            return (nodes != nullptr);
-        }
-
-    private:
-        const std::vector<node> *nodes;
-        const std::vector<bool> *edges;
-        std::size_t index{};
-    };
-
-    struct iterator {
-        using difference_type = std::ptrdiff_t;
-        using value_type = task;
-        using pointer = void;
-        using reference = value_type;
-        using iterator_category = std::input_iterator_tag;
-
-        iterator(std::size_t(* check)(std::size_t, const std::vector<node> &, const std::vector<bool> &), const std::vector<node> &vert, const std::vector<bool> &deps, const std::size_t curr)
-            : next{check},
-              nodes{&vert},
-              edges{&deps},
-              index{curr}
-        {}
-
-        iterator & operator++() ENTT_NOEXCEPT {
-            index = next(index, *nodes, *edges);
-            return *this;
-        }
-
-        iterator operator++(int) ENTT_NOEXCEPT {
-            iterator orig = *this;
-            return ++(*this), orig;
-        }
-
-        [[nodiscard]] reference operator*() const ENTT_NOEXCEPT {
-            return reference{*nodes, *edges, index};
-        }
-
-        [[nodiscard]] bool operator==(const iterator &other) const ENTT_NOEXCEPT {
-            return other.index == index;
-        }
-
-        [[nodiscard]] bool operator!=(const iterator &other) const ENTT_NOEXCEPT {
-            return !(*this == other);
+        const std::vector<std::size_t> & children() const ENTT_NOEXCEPT {
+            return reachable;
         }
 
     private:
-        std::size_t(* next)(std::size_t, const std::vector<node> &, const std::vector<bool> &){};
-        const std::vector<node> *nodes{};
-        const std::vector<bool> *edges{};
-        std::size_t index{};
-    };
-
-    struct range {
-        range(std::size_t(* check)(std::size_t, const std::vector<node> &, const std::vector<bool> &), const std::vector<node> &vert, const std::vector<bool> &deps, const std::size_t curr)
-            : next{check},
-              nodes{&vert},
-              edges{&deps},
-              index{curr}
-        {}
-
-        [[nodiscard]] iterator begin() const ENTT_NOEXCEPT {
-            return iterator{next, *nodes, *edges, index};
-        }
-
-        [[nodiscard]] iterator end() const ENTT_NOEXCEPT {
-            return iterator{next, *nodes, *edges, nodes->size()};
-        }
-
-    private:
-        std::size_t(* next)(std::size_t, const std::vector<node> &, const std::vector<bool> &){};
-        const std::vector<node> *nodes{};
-        const std::vector<bool> *edges{};
-        std::size_t index{};
+        vertex_data node;
+        std::vector<std::size_t> reachable;
     };
 
     template<auto Candidate, typename... Req>
     void emplace(const char *name = nullptr) {
         using resource_type = decltype(internal::to_resource<Req...>(Candidate));
-        const auto index = nodes.size();
-        auto &item = nodes.emplace_back();
+        const auto index = vertices.size();
+        auto &item = vertices.emplace_back();
 
         item.name = name;
-        item.top_level = false;
         item.info = type_id<integral_constant<Candidate>>();
-        item.job = +[](const void *, basic_registry<entity_type> &registry) {
+        item.task = +[](const void *, basic_registry<entity_type> &registry) {
             auto arguments = to_args(registry, typename resource_type::args{});
             std::apply(Candidate, arguments);
         };
@@ -308,14 +156,13 @@ public:
     template<auto Candidate, typename... Req, typename Type>
     void emplace(Type &value_or_instance, const char *name = nullptr) {
         using resource_type = decltype(internal::to_resource<Req...>(Candidate));
-        const auto index = nodes.size();
-        auto &item = nodes.emplace_back();
+        const auto index = vertices.size();
+        auto &item = vertices.emplace_back();
 
         item.name = name;
-        item.top_level = false;
         item.info = type_id<integral_constant<Candidate>>();
         item.payload = &value_or_instance;
-        item.job = +[](const void *payload, basic_registry<entity_type> &registry) {
+        item.task = +[](const void *payload, basic_registry<entity_type> &registry) {
             Type *curr = static_cast<Type *>(const_cast<std::conditional_t<std::is_const_v<Type>, const void *, void *>>(payload));
             auto arguments = std::tuple_cat(std::forward_as_tuple(*curr), to_args(registry, typename resource_type::args{}));
             std::apply(Candidate, arguments);
@@ -324,40 +171,115 @@ public:
         track_dependencies(index, typename resource_type::ro{}, typename resource_type::rw{});
     }
 
-    [[nodiscard]] range visit() ENTT_NOEXCEPT {
-        refresh_graph();
-        auto next = [](std::size_t index, const std::vector<node> &, const std::vector<bool> &) { return ++index; };
-        return range{next, nodes, edges, {}};
+    template<typename... Req>
+    void emplace(function_type *func, const void *data = nullptr, const char *name = nullptr) {
+        using resource_type = decltype(internal::to_resource<Req...>());
+        const auto index = vertices.size();
+        auto &item = vertices.emplace_back();
+
+        item.name = name;
+        item.payload = &data;
+        item.task = func;
+
+        track_dependencies(index, typename resource_type::ro{}, typename resource_type::rw{});
     }
 
-    [[nodiscard]] range top_level() ENTT_NOEXCEPT {
-        refresh_graph();
+    std::vector<vertex> adjacency_list() {
+        const auto length = vertices.size();
+        std::vector<bool> edges(length * length, false);
 
-        auto next = [](std::size_t index, const std::vector<node> &nodes, const std::vector<bool> &) {
-            const auto last = nodes.size();
-            while(++index < last && !nodes[index].top_level);
-            return index;
-        };
+        // creates the ajacency matrix
+        for(const auto &deps: dependencies) {
+            const auto last = deps.second.cend();
+            auto it = deps.second.cbegin();
 
-        for(std::size_t pos{}, last = nodes.size(); pos < last; ++pos) {
-            if(nodes[pos].top_level) {
-                return range{next, nodes, edges, pos};
+            while(it != last) {
+                if(it->second) {
+                    // rw item
+                    if(auto curr = it++; it != last) {
+                        if(it->second) {
+                            edges[curr->first * length + it->first] = true;
+                        } else {
+                            if(const auto next = std::find_if(it, last, [](const auto &elem) { return elem.second; }); next != last) {
+                                for(; it != next; ++it) {
+                                    edges[curr->first * length + it->first] = true;
+                                    edges[it->first * length + next->first] = true;
+                                }
+                            } else {
+                                for(; it != next; ++it) {
+                                    edges[curr->first * length + it->first] = true;
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // ro item, possibly only on first iteration
+                    if(const auto next = std::find_if(it, last, [](const auto &elem) { return elem.second; }); next != last) {
+                        for(; it != next; ++it) {
+                            edges[it->first * length + next->first] = true;
+                        }
+                    } else {
+                        it = last;
+                    }
+                }
             }
         }
 
-        return range{next, nodes, edges, nodes.size()};
+        // computes the transitive closure
+        for(std::size_t vk{}; vk < length; ++vk) {
+            for(std::size_t vi{}; vi < length; ++vi) {
+                for(std::size_t vj{}; vj < length; ++vj) {
+                    edges[vi * length + vj] = edges[vi * length + vj] || (edges[vi * length + vk] && edges[vk * length + vj]);
+                }
+            }
+        }
+
+        // applies the transitive reduction
+        for(std::size_t vert{}; vert < length; ++vert) {
+            edges[vert * length + vert] = false;
+        }
+
+        for(std::size_t vj{}; vj < length; ++vj) {
+            for(std::size_t vi{}; vi < length; ++vi) {
+                if(edges[vi * length + vj]) {
+                    for(std::size_t vk{}; vk < length; ++vk) {
+                        if(edges[vj * length + vk]) {
+                            edges[vi * length + vk] = false;
+                        }
+                    }
+                }
+            }
+        }
+
+        // creates the adjacency list
+        std::vector<vertex> graph{};
+        graph.reserve(vertices.size());
+
+        for(std::size_t pos{}, length = vertices.size(); pos < length; ++pos) {
+            std::vector<std::size_t> reachable{};
+            const auto &curr = vertices[pos];
+            const auto row = pos * length;
+
+            for(std::size_t col{}; col < length; ++col) {
+                if(edges[row + col]) {
+                    reachable.push_back(col);
+                }
+            }
+
+            graph.emplace_back(vertices[pos], std::move(reachable));
+        }
+
+        return graph;
     }
 
     void clear() {
-        edges.clear();
         dependencies.clear();
-        nodes.clear();
+        vertices.clear();
     }
 
 private:
-    std::vector<bool> edges;
     std::unordered_map<entt::id_type, std::vector<std::pair<std::size_t, bool>>> dependencies;
-    std::vector<node> nodes;
+    std::vector<vertex_data> vertices;
 };
 
 

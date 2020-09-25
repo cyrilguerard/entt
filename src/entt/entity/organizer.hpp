@@ -236,7 +236,7 @@ public:
     void emplace(function_type *func, const void *data = nullptr, const char *name = nullptr) {
         using resource_type = decltype(internal::to_resource<Req...>());
         track_dependencies(vertices.size(), typename resource_type::ro{}, typename resource_type::rw{});
-        vertices.emplace_back({ name, callback, data, {} });
+        vertices.push_back({ name, func, data });
     }
 
     std::vector<vertex> graph() {

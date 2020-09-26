@@ -100,6 +100,7 @@ TEST(Organizer, EmplaceDirectFunction) {
 	entt::organizer organizer;
 	clazz instance;
 
+	// no aggressive comdat
 	auto t1 = +[](const void *, entt::registry &registry) { registry.clear<int>(); };
 	auto t2 = +[](const void *, entt::registry &registry) { registry.clear<char>(); };
 	auto t3 = +[](const void *, entt::registry &registry) { registry.clear<double>(); };

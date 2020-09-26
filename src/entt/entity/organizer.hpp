@@ -17,12 +17,6 @@
 namespace entt {
 
 
-// TODO
-// - sync point: no resource declared => block all existing resources
-// - lock the pool/context var creation section (also in the dispatcher)
-// - doc, tests
-
-
 namespace internal {
 
 
@@ -185,10 +179,15 @@ public:
     using function_type = callback_type;
 
     struct vertex {
-        vertex(vertex_data data, std::vector<std::size_t> edges)
-            : node{std::move(data)},
+        vertex(const bool vtype, vertex_data data, std::vector<std::size_t> edges)
+            : is_top_level{vtype},
+              node{std::move(data)},
               reachable{std::move(edges)}
         {}
+
+        bool top_level() const ENTT_NOEXCEPT {
+            return is_top_level;
+        }
 
         type_info info() const ENTT_NOEXCEPT {
             return node.info;
@@ -211,6 +210,7 @@ public:
         }
 
     private:
+        bool is_top_level;
         vertex_data node;
         std::vector<std::size_t> reachable;
     };
@@ -252,17 +252,22 @@ public:
         std::vector<vertex> adjacency_list{};
         adjacency_list.reserve(vertices.size());
 
-        for(std::size_t pos{}, length = vertices.size(); pos < length; ++pos) {
+        for(std::size_t col{}, length = vertices.size(); col < length; ++col) {
             std::vector<std::size_t> reachable{};
-            const auto row = pos * length;
+            const auto row = col * length;
+            bool is_top_level = true;
 
-            for(std::size_t col{}; col < length; ++col) {
-                if(edges[row + col]) {
-                    reachable.push_back(col);
+            for(std::size_t next{}; next < length; ++next) {
+                if(edges[row + next]) {
+                    reachable.push_back(next);
                 }
             }
 
-            adjacency_list.emplace_back(vertices[pos], std::move(reachable));
+            for(std::size_t next{}; next < length && is_top_level; ++next) {
+                is_top_level = !edges[next * length + col];
+            }
+
+            adjacency_list.emplace_back(is_top_level, vertices[col], std::move(reachable));
         }
 
         return adjacency_list;

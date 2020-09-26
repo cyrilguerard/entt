@@ -35,6 +35,11 @@ TEST(Organizer, EmplaceFreeFunction) {
 	ASSERT_NE(graph[1].info(), graph[2].info());
 	ASSERT_NE(graph[2].info(), graph[3].info());
 
+	ASSERT_TRUE(graph[0u].top_level());
+	ASSERT_FALSE(graph[1u].top_level());
+	ASSERT_FALSE(graph[2u].top_level());
+	ASSERT_FALSE(graph[3u].top_level());
+
 	ASSERT_EQ(graph[0u].children().size(), 2u);
 	ASSERT_EQ(graph[1u].children().size(), 1u);
 	ASSERT_EQ(graph[2u].children().size(), 1u);
@@ -72,6 +77,11 @@ TEST(Organizer, EmplaceMemberFunction) {
 	ASSERT_NE(graph[1].info(), graph[2].info());
 	ASSERT_NE(graph[2].info(), graph[3].info());
 
+	ASSERT_TRUE(graph[0u].top_level());
+	ASSERT_FALSE(graph[1u].top_level());
+	ASSERT_FALSE(graph[2u].top_level());
+	ASSERT_FALSE(graph[3u].top_level());
+
 	ASSERT_EQ(graph[0u].children().size(), 1u);
 	ASSERT_EQ(graph[1u].children().size(), 1u);
 	ASSERT_EQ(graph[2u].children().size(), 1u);
@@ -90,10 +100,10 @@ TEST(Organizer, EmplaceDirectFunction) {
 	entt::organizer organizer;
 	clazz instance;
 
-	auto t1 = +[](const void *, entt::registry &registry) { return registry.clear<int>(); };
-	auto t2 = +[](const void *, entt::registry &registry) { return registry.clear<char>(); };
-	auto t3 = +[](const void *, entt::registry &registry) { return registry.clear<double>(); };
-	auto t4 = +[](const void *, entt::registry &registry) { return registry.clear(); };
+	auto t1 = +[](const void *, entt::registry &registry) { registry.clear<int>(); };
+	auto t2 = +[](const void *, entt::registry &registry) { registry.clear<char>(); };
+	auto t3 = +[](const void *, entt::registry &registry) { registry.clear<double>(); };
+	auto t4 = +[](const void *, entt::registry &registry) { registry.clear(); };
 
 	organizer.emplace<const int>(t1, nullptr, "t1");
 	organizer.emplace<int>(t2, &instance, "t2");
@@ -122,6 +132,11 @@ TEST(Organizer, EmplaceDirectFunction) {
 	ASSERT_EQ(graph[0].info(), entt::type_info{});
 	ASSERT_EQ(graph[1].info(), entt::type_info{});
 	ASSERT_EQ(graph[2].info(), entt::type_info{});
+
+	ASSERT_TRUE(graph[0u].top_level());
+	ASSERT_FALSE(graph[1u].top_level());
+	ASSERT_FALSE(graph[2u].top_level());
+	ASSERT_FALSE(graph[3u].top_level());
 
 	ASSERT_EQ(graph[0u].children().size(), 1u);
 	ASSERT_EQ(graph[1u].children().size(), 1u);

@@ -251,8 +251,8 @@ public:
     void emplace(const char *name = nullptr) {
         using resource_type = decltype(internal::to_resource<Req...>(Candidate));
         constexpr auto requires_registry = type_list_contains_v<typename resource_type::args, basic_registry<entity_type>>;
-        const auto *prepare = +[](basic_registry<entity_type> &reg) { to_args(reg, typename resource_type::args{}); };
-        const auto *callback = +[](const void *, basic_registry<entity_type> &reg) { std::apply(Candidate, to_args(reg, typename resource_type::args{})); };
+        prepare_type *prepare = +[](basic_registry<entity_type> &reg) { to_args(reg, typename resource_type::args{}); };
+        callback_type *callback = +[](const void *, basic_registry<entity_type> &reg) { std::apply(Candidate, to_args(reg, typename resource_type::args{})); };
 
         track_dependencies(vertices.size(), requires_registry, typename resource_type::ro{}, typename resource_type::rw{});
         vertices.push_back({ name, nullptr, callback, prepare, type_id<integral_constant<Candidate>>() });
@@ -262,9 +262,9 @@ public:
     void emplace(Type &value_or_instance, const char *name = nullptr) {
         using resource_type = decltype(internal::to_resource<Req...>(Candidate));
         constexpr auto requires_registry = type_list_contains_v<typename resource_type::args, basic_registry<entity_type>>;
-        auto prepare = +[](basic_registry<entity_type> &reg) { to_args(reg, typename resource_type::args{}); };
+        prepare_type *prepare = +[](basic_registry<entity_type> &reg) { to_args(reg, typename resource_type::args{}); };
 
-        auto callback = +[](const void *payload, basic_registry<entity_type> &reg) {
+        callback_type *callback = +[](const void *payload, basic_registry<entity_type> &reg) {
             Type *curr = static_cast<Type *>(const_cast<std::conditional_t<std::is_const_v<Type>, const void *, void *>>(payload));
             std::apply(Candidate, std::tuple_cat(std::forward_as_tuple(*curr), to_args(reg, typename resource_type::args{})));
         };

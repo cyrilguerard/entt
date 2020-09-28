@@ -33,6 +33,16 @@ TEST(Organizer, EmplaceFreeFunction) {
 	ASSERT_STREQ(graph[2u].name(), "t3");
 	ASSERT_STREQ(graph[3u].name(), "t4");
 
+	ASSERT_EQ(graph[0u].ro_count(), 1u);
+	ASSERT_EQ(graph[1u].ro_count(), 1u);
+	ASSERT_EQ(graph[2u].ro_count(), 1u);
+	ASSERT_EQ(graph[3u].ro_count(), 2u);
+
+	ASSERT_EQ(graph[0u].rw_count(), 2u);
+	ASSERT_EQ(graph[1u].rw_count(), 1u);
+	ASSERT_EQ(graph[2u].rw_count(), 1u);
+	ASSERT_EQ(graph[3u].rw_count(), 0u);
+
 	ASSERT_NE(graph[0u].info(), graph[1u].info());
 	ASSERT_NE(graph[1u].info(), graph[2u].info());
 	ASSERT_NE(graph[2u].info(), graph[3u].info());
@@ -74,6 +84,16 @@ TEST(Organizer, EmplaceMemberFunction) {
 	ASSERT_STREQ(graph[1u].name(), "t2");
 	ASSERT_STREQ(graph[2u].name(), "t3");
 	ASSERT_STREQ(graph[3u].name(), "t4");
+
+	ASSERT_EQ(graph[0u].ro_count(), 3u);
+	ASSERT_EQ(graph[1u].ro_count(), 0u);
+	ASSERT_EQ(graph[2u].ro_count(), 0u);
+	ASSERT_EQ(graph[3u].ro_count(), 0u);
+
+	ASSERT_EQ(graph[0u].rw_count(), 0u);
+	ASSERT_EQ(graph[1u].rw_count(), 1u);
+	ASSERT_EQ(graph[2u].rw_count(), 2u);
+	ASSERT_EQ(graph[3u].rw_count(), 3u);
 
 	ASSERT_NE(graph[0u].info(), graph[1u].info());
 	ASSERT_NE(graph[1u].info(), graph[2u].info());
@@ -121,6 +141,16 @@ TEST(Organizer, EmplaceDirectFunction) {
 	ASSERT_STREQ(graph[1u].name(), "t2");
 	ASSERT_STREQ(graph[2u].name(), "t3");
 	ASSERT_STREQ(graph[3u].name(), "t4");
+
+	ASSERT_EQ(graph[0u].ro_count(), 1u);
+	ASSERT_EQ(graph[1u].ro_count(), 0u);
+	ASSERT_EQ(graph[2u].ro_count(), 0u);
+	ASSERT_EQ(graph[3u].ro_count(), 0u);
+
+	ASSERT_EQ(graph[0u].rw_count(), 0u);
+	ASSERT_EQ(graph[1u].rw_count(), 1u);
+	ASSERT_EQ(graph[2u].rw_count(), 2u);
+	ASSERT_EQ(graph[3u].rw_count(), 3u);
 
 	ASSERT_TRUE(graph[0u].callback() == t1);
 	ASSERT_TRUE(graph[1u].callback() == t2);

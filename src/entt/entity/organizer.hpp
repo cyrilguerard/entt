@@ -101,6 +101,8 @@ class basic_organizer final {
     using prepare_type = void(entt::basic_registry<Entity> &);
 
     struct vertex_data final {
+        std::size_t ro_count{};
+        std::size_t rw_count{};
         const char *name{};
         const void *payload{};
         callback_type *callback{};
@@ -213,6 +215,14 @@ public:
               reachable{std::move(edges)}
         {}
 
+        size_type ro_count() const ENTT_NOEXCEPT {
+            return node.ro_count;
+        }
+
+        size_type rw_count() const ENTT_NOEXCEPT {
+            return node.rw_count;
+        }
+
         bool top_level() const ENTT_NOEXCEPT {
             return is_top_level;
         }
@@ -255,7 +265,16 @@ public:
         callback_type *callback = +[](const void *, basic_registry<entity_type> &reg) { std::apply(Candidate, to_args(reg, typename resource_type::args{})); };
 
         track_dependencies(vertices.size(), requires_registry, typename resource_type::ro{}, typename resource_type::rw{});
-        vertices.push_back({ name, nullptr, callback, prepare, type_id<integral_constant<Candidate>>() });
+
+        vertices.push_back({
+            type_list_size_v<typename resource_type::ro>,
+            type_list_size_v<typename resource_type::rw>,
+            name,
+            nullptr,
+            callback,
+            prepare,
+            type_id<integral_constant<Candidate>>()
+        });
     }
 
     template<auto Candidate, typename... Req, typename Type>
@@ -270,14 +289,30 @@ public:
         };
 
         track_dependencies(vertices.size(), requires_registry, typename resource_type::ro{}, typename resource_type::rw{});
-        vertices.push_back({ name, &value_or_instance, callback, prepare, type_id<integral_constant<Candidate>>() });
+
+        vertices.push_back({
+            type_list_size_v<typename resource_type::ro>,
+            type_list_size_v<typename resource_type::rw>,
+            name,
+            &value_or_instance,
+            callback,
+            prepare,
+            type_id<integral_constant<Candidate>>()
+        });
     }
 
     template<typename... Req>
     void emplace(function_type *func, const void *data = nullptr, const char *name = nullptr) {
         using resource_type = decltype(internal::to_resource<Req...>());
         track_dependencies(vertices.size(), true, typename resource_type::ro{}, typename resource_type::rw{});
-        vertices.push_back({ name, data, func });
+
+        vertices.push_back({
+            type_list_size_v<typename resource_type::ro>,
+            type_list_size_v<typename resource_type::rw>,
+            name,
+            data,
+            func
+        });
     }
 
     std::vector<vertex> graph() {

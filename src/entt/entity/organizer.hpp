@@ -99,6 +99,7 @@ template<typename Entity>
 class basic_organizer final {
     using callback_type = void(const void *, entt::basic_registry<Entity> &);
     using prepare_type = void(entt::basic_registry<Entity> &);
+    using dependency_type = std::size_t(const bool, type_info *, const std::size_t);
 
     struct vertex_data final {
         std::size_t ro_count{};
@@ -106,12 +107,13 @@ class basic_organizer final {
         const char *name{};
         const void *payload{};
         callback_type *callback{};
+        dependency_type *dependency;
         prepare_type *prepare{};
         type_info info{};
     };
 
     template<typename Type>
-    static decltype(auto) extract(basic_registry<Entity> &reg) {
+    [[nodiscard]] static decltype(auto) extract(basic_registry<Entity> &reg) {
         if constexpr(std::is_same_v<Type, basic_registry<Entity>>) {
             return reg;
         } else if constexpr(internal::is_view_v<Type>) {
@@ -122,8 +124,20 @@ class basic_organizer final {
     }
 
     template<typename... Args>
-    static auto to_args(basic_registry<Entity> &reg, type_list<Args...>) {
+    [[nodiscard]] static auto to_args(basic_registry<Entity> &reg, type_list<Args...>) {
         return std::forward_as_tuple(extract<Args>(reg)...);
+    }
+
+    template<typename... Type>
+    static std::size_t fill_dependencies(type_list<Type...>, type_info *buffer, const std::size_t count) {
+        if constexpr(sizeof...(Type) == 0u) {
+            return {};
+        } else {
+            type_info info[sizeof...(Type)]{type_id<Type>()...};
+            const auto length = std::min(count, sizeof...(Type));
+            std::copy_n(info, length, buffer);
+            return length;
+        }
     }
 
     template<typename... RO, typename... RW>
@@ -215,6 +229,14 @@ public:
               reachable{std::move(edges)}
         {}
 
+        size_type ro_dependency(type_info *buffer, const std::size_t length) const{
+            return node.dependency(false, buffer, length);
+        }
+
+        size_type rw_dependency(type_info *buffer, const std::size_t length) const {
+            return node.dependency(true, buffer, length);
+        }
+
         size_type ro_count() const ENTT_NOEXCEPT {
             return node.ro_count;
         }
@@ -243,8 +265,8 @@ public:
             return node.payload;
         }
 
-        void prepare(basic_registry<entity_type> &reg) const ENTT_NOEXCEPT {
-            node.prepare ? node.prepare(reg) : void();
+        void prepare(basic_registry<entity_type> &reg) const {
+            node.prepare(reg);
         }
 
         const std::vector<std::size_t> & children() const ENTT_NOEXCEPT {
@@ -261,7 +283,6 @@ public:
     void emplace(const char *name = nullptr) {
         using resource_type = decltype(internal::to_resource<Req...>(Candidate));
         constexpr auto requires_registry = type_list_contains_v<typename resource_type::args, basic_registry<entity_type>>;
-        prepare_type *prepare = +[](basic_registry<entity_type> &reg) { to_args(reg, typename resource_type::args{}); };
         callback_type *callback = +[](const void *, basic_registry<entity_type> &reg) { std::apply(Candidate, to_args(reg, typename resource_type::args{})); };
 
         track_dependencies(vertices.size(), requires_registry, typename resource_type::ro{}, typename resource_type::rw{});
@@ -272,7 +293,8 @@ public:
             name,
             nullptr,
             callback,
-            prepare,
+            +[](const bool rw, type_info *buffer, const std::size_t length) { return rw ? fill_dependencies(typename resource_type::rw{}, buffer, length) : fill_dependencies(typename resource_type::ro{}, buffer, length); },
+            +[](basic_registry<entity_type> &reg) { void(to_args(reg, typename resource_type::args{})); },
             type_id<integral_constant<Candidate>>()
         });
     }
@@ -281,7 +303,6 @@ public:
     void emplace(Type &value_or_instance, const char *name = nullptr) {
         using resource_type = decltype(internal::to_resource<Req...>(Candidate));
         constexpr auto requires_registry = type_list_contains_v<typename resource_type::args, basic_registry<entity_type>>;
-        prepare_type *prepare = +[](basic_registry<entity_type> &reg) { to_args(reg, typename resource_type::args{}); };
 
         callback_type *callback = +[](const void *payload, basic_registry<entity_type> &reg) {
             Type *curr = static_cast<Type *>(const_cast<std::conditional_t<std::is_const_v<Type>, const void *, void *>>(payload));
@@ -296,7 +317,8 @@ public:
             name,
             &value_or_instance,
             callback,
-            prepare,
+            +[](const bool rw, type_info *buffer, const std::size_t length) { return rw ? fill_dependencies(typename resource_type::rw{}, buffer, length) : fill_dependencies(typename resource_type::ro{}, buffer, length); },
+            +[](basic_registry<entity_type> &reg) { void(to_args(reg, typename resource_type::args{})); },
             type_id<integral_constant<Candidate>>()
         });
     }
@@ -311,7 +333,10 @@ public:
             type_list_size_v<typename resource_type::rw>,
             name,
             data,
-            func
+            func,
+            +[](const bool rw, type_info *buffer, const std::size_t length) { return rw ? fill_dependencies(typename resource_type::rw{}, buffer, length) : fill_dependencies(typename resource_type::ro{}, buffer, length); },
+            +[](basic_registry<entity_type> &reg) { void(to_args(reg, typename resource_type::args{})); },
+            type_info{}
         });
     }
 

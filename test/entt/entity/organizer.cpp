@@ -260,3 +260,27 @@ TEST(Organizer, Prepare) {
 	ASSERT_EQ(registry.try_ctx<char>(), nullptr);
 	ASSERT_NE(registry.try_ctx<double>(), nullptr);
 }
+
+TEST(Organizer, Dependencies) {
+	entt::organizer organizer;
+
+	organizer.emplace<&ro_int_rw_char_double>("func");
+
+	const auto graph = organizer.graph();
+	entt::type_info buffer[5u]{};
+
+	for(auto &&vertex: graph) {
+		ASSERT_EQ(vertex.ro_count(), 1u);
+		ASSERT_EQ(vertex.rw_count(), 2u);
+
+		ASSERT_EQ(vertex.ro_dependency(buffer, 0u), 0u);
+		ASSERT_EQ(vertex.rw_dependency(buffer, 1u), 1u);
+
+		ASSERT_EQ(vertex.ro_dependency(buffer, 5u), 1u);
+		ASSERT_EQ(buffer[0u], entt::type_id<int>());
+
+		ASSERT_EQ(vertex.rw_dependency(buffer, 5u), 2u);
+		ASSERT_EQ(buffer[0u], entt::type_id<char>());
+		ASSERT_EQ(buffer[1u], entt::type_id<double>());
+	}
+}

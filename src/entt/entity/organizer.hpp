@@ -30,32 +30,41 @@ template<typename Type>
 inline constexpr bool is_view_v = is_view<Type>::value;
 
 
-template<typename Type>
+template<typename Type, typename Override>
 struct unpack_type {
-    using ro = std::conditional_t<std::is_const_v<Type>, type_list<std::remove_const_t<Type>>, type_list<>>;
-    using rw = std::conditional_t<std::is_const_v<Type>, type_list<>, type_list<Type>>;
+    using ro = std::conditional_t<
+        type_list_contains_v<Override, std::add_const_t<Type>> || (std::is_const_v<Type> && !type_list_contains_v<Override, std::remove_const_t<Type>>),
+        type_list<std::remove_const_t<Type>>,
+        type_list<>
+    >;
+
+    using rw = std::conditional_t<
+        type_list_contains_v<Override, std::remove_const_t<Type>> || (!std::is_const_v<Type> && !type_list_contains_v<Override, std::add_const_t<Type>>),
+        type_list<Type>,
+        type_list<>
+    >;
 };
 
-template<typename Entity>
-struct unpack_type<basic_registry<Entity>> {
+template<typename Entity, typename... Override>
+struct unpack_type<basic_registry<Entity>, type_list<Override...>> {
     using ro = type_list<>;
     using rw = type_list<>;
 };
 
-template<typename Entity>
-struct unpack_type<const basic_registry<Entity>>
-    : unpack_type<basic_registry<Entity>>
+template<typename Entity, typename... Override>
+struct unpack_type<const basic_registry<Entity>, type_list<Override...>>
+    : unpack_type<basic_registry<Entity>, type_list<Override...>>
 {};
 
-template<typename Entity, typename... Exclude, typename... Component>
-struct unpack_type<basic_view<Entity, exclude_t<Exclude...>, Component...>> {
-    using ro = type_list_cat_t<type_list<Exclude...>, type_list_cat_t<std::conditional_t<std::is_const_v<Component>, type_list<std::remove_const_t<Component>>, type_list<>>...>>;
-    using rw = type_list_cat_t<type_list_cat_t<std::conditional_t<std::is_const_v<Component>, type_list<>, type_list<Component>>...>>;
+template<typename Entity, typename... Exclude, typename... Component, typename... Override>
+struct unpack_type<basic_view<Entity, exclude_t<Exclude...>, Component...>, type_list<Override...>> {
+    using ro = type_list_cat_t<type_list<Exclude...>, typename unpack_type<Component, type_list<Override...>>::ro...>;
+    using rw = type_list_cat_t<typename unpack_type<Component, type_list<Override...>>::rw...>;
 };
 
-template<typename Entity, typename... Exclude, typename... Component>
-struct unpack_type<const basic_view<Entity, exclude_t<Exclude...>, Component...>>
-    : unpack_type<basic_view<Entity, exclude_t<Exclude...>, Component...>>
+template<typename Entity, typename... Exclude, typename... Component, typename... Override>
+struct unpack_type<const basic_view<Entity, exclude_t<Exclude...>, Component...>, type_list<Override...>>
+    : unpack_type<basic_view<Entity, exclude_t<Exclude...>, Component...>, type_list<Override...>>
 {};
 
 
@@ -65,8 +74,8 @@ struct resource;
 template<typename... Args, typename... Req>
 struct resource<type_list<Args...>, type_list<Req...>> {
     using args = type_list<std::remove_const_t<Args>...>;
-    using ro = type_list_cat_t<typename unpack_type<Args>::ro..., typename unpack_type<Req>::ro...>;
-    using rw = type_list_cat_t<typename unpack_type<Args>::rw..., typename unpack_type<Req>::rw...>;
+    using ro = type_list_cat_t<typename unpack_type<Args, type_list<Req...>>::ro..., typename unpack_type<Req, type_list<>>::ro...>;
+    using rw = type_list_cat_t<typename unpack_type<Args, type_list<Req...>>::rw..., typename unpack_type<Req, type_list<>>::rw...>;
 };
 
 

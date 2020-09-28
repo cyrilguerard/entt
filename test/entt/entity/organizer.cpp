@@ -181,10 +181,33 @@ TEST(Organizer, SyncPoint) {
 
 	ASSERT_EQ(graph[0u].children()[0u], 1u);
 	ASSERT_EQ(graph[1u].children()[0u], 2u);
+}
 
-	organizer.clear();
+TEST(Organizer, Override) {
+	entt::organizer organizer;
 
-	ASSERT_EQ(organizer.graph().size(), 0u);
+	organizer.emplace<&ro_int_rw_char_double, const char, const double>("t1");
+	organizer.emplace<&ro_char_rw_double, const double>("t2");
+	organizer.emplace<&ro_int_double, double>("t3");
+
+	const auto graph = organizer.graph();
+
+	ASSERT_EQ(graph.size(), 3u);
+
+	ASSERT_STREQ(graph[0u].name(), "t1");
+	ASSERT_STREQ(graph[1u].name(), "t2");
+	ASSERT_STREQ(graph[2u].name(), "t3");
+
+	ASSERT_TRUE(graph[0u].top_level());
+	ASSERT_TRUE(graph[1u].top_level());
+	ASSERT_FALSE(graph[2u].top_level());
+
+	ASSERT_EQ(graph[0u].children().size(), 1u);
+	ASSERT_EQ(graph[1u].children().size(), 1u);
+	ASSERT_EQ(graph[2u].children().size(), 0u);
+
+	ASSERT_EQ(graph[0u].children()[0u], 2u);
+	ASSERT_EQ(graph[1u].children()[0u], 2u);
 }
 
 TEST(Organizer, Prepare) {

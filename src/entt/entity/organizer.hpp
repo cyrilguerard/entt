@@ -36,11 +36,27 @@ struct unpack_type {
     using rw = std::conditional_t<std::is_const_v<Type>, type_list<>, type_list<Type>>;
 };
 
+template<typename Entity>
+struct unpack_type<basic_registry<Entity>> {
+    using ro = type_list<>;
+    using rw = type_list<>;
+};
+
+template<typename Entity>
+struct unpack_type<const basic_registry<Entity>>
+    : unpack_type<basic_registry<Entity>>
+{};
+
 template<typename Entity, typename... Exclude, typename... Component>
 struct unpack_type<basic_view<Entity, exclude_t<Exclude...>, Component...>> {
     using ro = type_list_cat_t<type_list<Exclude...>, type_list_cat_t<std::conditional_t<std::is_const_v<Component>, type_list<std::remove_const_t<Component>>, type_list<>>...>>;
     using rw = type_list_cat_t<type_list_cat_t<std::conditional_t<std::is_const_v<Component>, type_list<>, type_list<Component>>...>>;
 };
+
+template<typename Entity, typename... Exclude, typename... Component>
+struct unpack_type<const basic_view<Entity, exclude_t<Exclude...>, Component...>>
+    : unpack_type<basic_view<Entity, exclude_t<Exclude...>, Component...>>
+{};
 
 
 template<typename, typename>
@@ -98,7 +114,8 @@ class basic_organizer final {
     }
 
     template<typename... RO, typename... RW>
-    void track_dependencies(std::size_t index, type_list<RO...>, type_list<RW...>) {
+    void track_dependencies(std::size_t index, const bool requires_registry, type_list<RO...>, type_list<RW...>) {
+        dependencies[type_hash<basic_registry<Entity>>::value()].emplace_back(index, requires_registry && (sizeof...(RO) + sizeof...(RW) == 0u));
         (dependencies[type_hash<RO>::value()].emplace_back(index, false), ...);
         (dependencies[type_hash<RW>::value()].emplace_back(index, true), ...);
     }
@@ -218,7 +235,8 @@ public:
     template<auto Candidate, typename... Req>
     void emplace(const char *name = nullptr) {
         using resource_type = decltype(internal::to_resource<Req...>(Candidate));
-        track_dependencies(vertices.size(), typename resource_type::ro{}, typename resource_type::rw{});
+        constexpr auto requires_registry = type_list_contains_v<typename resource_type::args, basic_registry<entity_type>>;
+        track_dependencies(vertices.size(), requires_registry, typename resource_type::ro{}, typename resource_type::rw{});
 
         vertices.push_back({ name, +[](const void *, basic_registry<entity_type> &reg) {
             std::apply(Candidate, to_args(reg, typename resource_type::args{}));
@@ -228,7 +246,8 @@ public:
     template<auto Candidate, typename... Req, typename Type>
     void emplace(Type &value_or_instance, const char *name = nullptr) {
         using resource_type = decltype(internal::to_resource<Req...>(Candidate));
-        track_dependencies(vertices.size(), typename resource_type::ro{}, typename resource_type::rw{});
+        constexpr auto requires_registry = type_list_contains_v<typename resource_type::args, basic_registry<entity_type>>;
+        track_dependencies(vertices.size(), requires_registry, typename resource_type::ro{}, typename resource_type::rw{});
 
         vertices.push_back({ name, +[](const void *payload, basic_registry<entity_type> &reg) {
             Type *curr = static_cast<Type *>(const_cast<std::conditional_t<std::is_const_v<Type>, const void *, void *>>(payload));
@@ -239,7 +258,7 @@ public:
     template<typename... Req>
     void emplace(function_type *func, const void *data = nullptr, const char *name = nullptr) {
         using resource_type = decltype(internal::to_resource<Req...>());
-        track_dependencies(vertices.size(), typename resource_type::ro{}, typename resource_type::rw{});
+        track_dependencies(vertices.size(), true, typename resource_type::ro{}, typename resource_type::rw{});
         vertices.push_back({ name, func, data });
     }
 

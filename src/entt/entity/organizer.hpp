@@ -84,7 +84,7 @@ class basic_organizer final {
     template<typename Type>
     [[nodiscard]] static decltype(auto) extract(basic_registry<Entity> &reg) {
         if constexpr(std::is_same_v<Type, basic_registry<Entity>>) {
-            return std::ref(reg);
+            return reg;
         } else if constexpr(internal::is_view_v<Type>) {
             return as_view{reg};
         } else {
@@ -221,8 +221,7 @@ public:
         track_dependencies(vertices.size(), typename resource_type::ro{}, typename resource_type::rw{});
 
         vertices.push_back({ name, +[](const void *, basic_registry<entity_type> &reg) {
-            auto arguments = to_args(reg, typename resource_type::args{});
-            std::apply(Candidate, arguments);
+            std::apply(Candidate, to_args(reg, typename resource_type::args{}));
         }, nullptr, type_id<integral_constant<Candidate>>() });
     }
 
@@ -233,8 +232,7 @@ public:
 
         vertices.push_back({ name, +[](const void *payload, basic_registry<entity_type> &reg) {
             Type *curr = static_cast<Type *>(const_cast<std::conditional_t<std::is_const_v<Type>, const void *, void *>>(payload));
-            auto arguments = std::tuple_cat(std::forward_as_tuple(*curr), to_args(reg, typename resource_type::args{}));
-            std::apply(Candidate, arguments);
+            std::apply(Candidate, std::tuple_cat(std::forward_as_tuple(*curr), to_args(reg, typename resource_type::args{})));
         }, &value_or_instance, type_id<integral_constant<Candidate>>() });
     }
 

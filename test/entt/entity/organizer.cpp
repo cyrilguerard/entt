@@ -186,3 +186,24 @@ TEST(Organizer, SyncPoint) {
 
 	ASSERT_EQ(organizer.graph().size(), 0u);
 }
+
+TEST(Organizer, Prepare) {
+	entt::organizer organizer;
+	entt::registry registry;
+
+	organizer.emplace<&ro_int_rw_char_double>("func");
+
+	const auto graph = organizer.graph();
+
+	ASSERT_EQ(registry.try_ctx<int>(), nullptr);
+	ASSERT_EQ(registry.try_ctx<char>(), nullptr);
+	ASSERT_EQ(registry.try_ctx<double>(), nullptr);
+
+	for(auto &&vertex: graph) {
+		vertex.prepare(registry);
+	}
+
+	ASSERT_EQ(registry.try_ctx<int>(), nullptr);
+	ASSERT_EQ(registry.try_ctx<char>(), nullptr);
+	ASSERT_NE(registry.try_ctx<double>(), nullptr);
+}
